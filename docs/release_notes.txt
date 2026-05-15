@@ -1,0 +1,57 @@
+V1.0    2025-04-21  Initial release
+
+V2.0    2025-05-10  1.Added On/Off functions
+                    2.Bug fixes
+                    3.Added more protocols
+
+V2.1    2025-05-23  1.Added more protocols
+                    2.Bug fixes
+
+V3.0    2025-06-20  1.Five new functions
+                    2.Format packets management
+                    3.Ability to process protocols with more than 1 format
+                    4.Added more protocols
+
+V4.0    2025-07-08  1.bc7215_ac_init2() for multi-segment protocols
+                    2.Renamed combinedMsg_t to bc7215CombinedMsg_t for constancy
+                    3.Auto recognization for most predefined protocols, only 3 left
+                    4.More protocols supported
+
+V4.1    2025-07-17  1. Support more protocols.
+                    2. Bug fixes.
+                    3. 2 new predefined data.
+
+V5.0    2025-09-12  1. Support IR command parsing
+                    2. More protocol supports
+					3. Bug fixes
+
+V5.1	2025-11-07	1. More supported protocols.
+					2. Increased power status parsing accuracy.
+					3. Known bug fixes.
+
+V5.2	2025-12-16  1. Support parsing for multi-segment commands.
+					2. bug fixes.
+
+V5.3	2026-01-05  1. Increased parsing accuracy.
+					2. Supports more protocols.
+					3. Bug fixes.
+
+V5.4	2026-01-19	1. Improved compatibility with Cortex-M0 & big-endin systems.
+                    2. Intergrated with BC7215 driver library V4.1
+
+V6.0	2026-01-30  1. Updated software license.
+
+V7.0	2026-03-30  1. Fahrenheit dedicated functions:
+                       bc7215_ac_init_f()
+					   bc7215_ac_init2_f()
+					   bc7215_ac_set_f()
+					   bc7215_ac_predefined_data_f()
+					   bc7215_ac_parse_f()
+					2. Extra sampling is no more needed.
+					3. Supports more protocols.
+					4. Added some Fahrenheit specific protocols.
+
+V7.1	2026-05-03	1. Integrate bc7215 driver library V4.2.
+					2. Improved Fahrenheit parsing accuracy.
+					3. Improved example code.
+					4. More Fahrenheit dedicated protocol support.

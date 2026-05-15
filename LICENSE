@@ -1,0 +1,22 @@
+软件许可协议 (Software License)
+
+Copyright (c) 2026 北京凌志比高科技有限公司 Beijing Bitcode Technology Co., Ltd.
+
+本软件根据以下条款授权使用：
+
+1.1 许可授予与免费使用： 本软件供获得者免费使用。特此授予您处理本软件副本的权利，包括但不限于使用、复制、修改及合并本软件。
+1.2 编译与集成授权： 特此授予获得者将本软件（或其修改版本）进行编译、链接并将其生成的二进制机器码嵌入到用户产品固件中的权利。获得者可以随其产品分发上述包含本软件功能的二进制固件。
+2. 协同使用限制： 本许可仅限于将本软件与 北京凌志比高科技有限公司 提供的 BC7215 系列产品 （以下简称“指定产品”）协同工作、通信或配合使用。严禁将本软件用于与任何非“指定产品”的硬件或软件产品进行互操作。
+3. 禁止逆向工程及去混淆： 您不得（且不得允许第三方）对本软件进行反向编译、反汇编或逆向工程。针对本软件中经过混淆处理的部分，严禁使用任何手段（包括但不限于静态分析、动态跟踪、自动化去混淆工具）试图恢复其原始逻辑结构、变量名、函数定义或底层通信协议。
+4. 版权声明： 上述版权声明和本许可声明（包括上述限制条款）应包含在本软件的所有副本或主要部分中。
+5. 免责声明： 本软件按“原样”提供，不作任何明示或暗示的保证。在任何情况下，作者或版权持有人均不对因本软件或使用本软件而引起的任何索赔、损害或其他责任负责。
+
+
+Permission is hereby granted under the following conditions:
+
+1.1 License Grant & Free of Charge: This Software is provided free of charge. Permission is hereby granted to deal in the Software, including without limitation the rights to use, copy, modify, and merge copies of the Software.
+1.2 Compilation and Integration Grant: Permission is hereby granted to compile and link the Software (or modified versions thereof) and to embed the resulting binary machine code into the firmware of the user's products. The recipient may distribute the aforementioned binary firmware containing the functionality of the Software as part of their products.
+2. Interoperability Restriction: The license granted herein is strictly limited to using the Software solely in conjunction, communication, or interoperation with the specific product BC7215 series provided by Beijing Bitcode Technology Co., Ltd. (the "Designated Product"). Use of this Software to interoperate with any hardware or software products other than the Designated Product is expressly prohibited.
+3. Prohibition on Reverse Engineering and De-obfuscation: You shall not (and shall not allow any third party to) decompile, disassemble, or reverse engineer the Software. For any portion of the Software provided in obfuscated form, you are expressly prohibited from attempting to restore the original logical structure, variable names, function definitions, or underlying protocol architecture through any means, including but not limited to static analysis, dynamic tracing, or the use of automated de-obfuscation tools.
+4. Notice Requirement: The above copyright notice and this permission notice (including the restrictions above) shall be included in all copies or substantial portions of the Software.
+5. Disclaimer: THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE.
