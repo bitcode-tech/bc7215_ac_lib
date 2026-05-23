@@ -16,6 +16,8 @@ An official Windows demo application is provided. After connecting the developme
 
 In addition to the demo software, several microcontroller examples are provided, including basic IR encoding and decoding, IR communication, and air conditioner control. The selected processors include STM32 and C51. The STM32 examples include complete STM32 CubeIDE project files, which can be imported directly into CubeIDE after downloading.
 
+The ESP-IDF(ESP32) example  uses the FreeRTOS and C++ which is the standard ESP-IDF setup. If you want to port it to other similar environments, you can refer to this example.
+
 Directory structure:
 
 ```text
@@ -30,7 +32,8 @@ root/
 │  ├─ programming_flowchart.pdf         <- AC library prog flowchart
 │  ├─ ac_lib_demo_code(pseudo)_en.pdf   <- AC library pseudocode
 │  ├─ bc7215_lib_examples_en.pdf        <- Low-level example documentation
-│  ├─ stm32_ac_demo_manual_en.pdf       <- AC control example manual
+│  ├─ stm32_ac_demo_manual_en.pdf       <- STM32 AC control example documentation
+│  ├─ ESP-IDF_example_doc_en.pdf        <- ESP32 AC control example documentation
 │  ├─ trouble_shooting_en.pdf           <- BC7215(A) chip troubleshooting
 │  ├─ release_notes.txt                 <- AC library release notes
 │  ├─ supported_ac_brand_list_en.pdf    <- List of supported AC brands
@@ -44,6 +47,7 @@ root/
 │  │  ├─ ir_switch/
 │  │  ├─ comm/
 │  │  └─ prog_remote/
+│  ├─ ESP-IDF/                          <- AC Control ESP-IDF version (C++/FreeRTOS)
 │  └─ STM32_CubeIDE/                    <- STM32 CubeIDE version
 │     ├─ ir_switch/
 │     ├─ comm/
@@ -71,5 +75,7 @@ Documents for developers:
 [BC7215(A) Low-level driver example documentation](./docs/bc7215_lib_examples_en.pdf)
 
 [STM32 AC control example manual](./docs/stm32_ac_demo_manual_en.pdf)
+
+[ESP-IDF(ESP32) AC Control example documentation](./docs/ESP-IDF_example_doc_en.pdf)
 
 [BC7215(A) chip troubleshooting](./docs/trouble_shooting_en.pdf)

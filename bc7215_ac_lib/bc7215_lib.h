@@ -11,7 +11,7 @@
  * Author: Bitcode
  * Initial Date: 2024-01-12
  *
- * Version: 4.2
+ * Version: 4.3
  *
  * Notes:
  *   This library is dependent on 'bc7215_lib_config.h' for configuration

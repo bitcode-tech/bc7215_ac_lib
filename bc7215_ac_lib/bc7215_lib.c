@@ -12,7 +12,7 @@
  * Author: Bitcode
  * Initial Date: 2024-01-12
  *
- * Current Version: 4.2
+ * Current Version: 4.3
  *
  * Notes:
  *   The functions defined in this file are designed to provide a seamless interface
@@ -306,6 +306,9 @@ void bc7215_process_uart_data(uint8_t data)
             if (data == 0x7b) /* byte-destuffing, ignore 0x7b */
             {
                 previousData = 0x7b;
+#    if PROCESS_IN_DIFFERENT_THREAD == 1
+		        mutexUnlockFunction(); /* release resource */
+#    endif
                 return;
             }
             else

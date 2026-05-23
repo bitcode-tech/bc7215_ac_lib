@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "bc7215.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        bc7215_ac_lib
+        esp_driver_uart
+        esp_driver_gpio
+        esp_timer
+        freertos
+        esp_common
+)
