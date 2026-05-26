@@ -1,9 +1,7 @@
 #include <cctype>
-#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <strings.h>
-#include <sys/fcntl.h>
 #include <unistd.h>
 
 #include "bc7215.hpp"
@@ -18,6 +16,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 /*
  * BC7215A Universal AC Controller demo for ESP-IDF.
@@ -32,7 +31,10 @@
  * app_main() calls the active job repeatedly, and each job advances only when
  * its required input/event is ready.
  */
+static QueueHandle_t console_rx_queue = nullptr;
 
+static constexpr size_t kConsoleQueueLen = 256;
+static constexpr uint32_t kConsolePollDelayMs = 10;
 // -----------------------------
 // Hardware configuration
 // -----------------------------
@@ -133,7 +135,6 @@ static bc7215FormatPkt_t         ir_format = {};
 // stdin byte by byte and assembles a full line only after Enter is pressed.
 static char   line_buf[160] = {};
 static size_t line_len = 0;
-static bool   skip_next_lf_ = false;        // Used to treat CRLF as one line ending.
 
 // Return a monotonic millisecond timestamp based on esp_timer.
 static uint64_t now_ms() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
@@ -141,29 +142,88 @@ static uint64_t now_ms() { return static_cast<uint64_t>(esp_timer_get_time() / 1
 // Yield the FreeRTOS task instead of using a CPU-burning delay loop.
 static void delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
-// Configure stdin/stdout for an interactive ESP-IDF serial console.
-// O_NONBLOCK is important: menu jobs must return immediately if no key is ready.
-static void setup_stdio_nonblocking()
+// Console RX task:
+//   - reads bytes from the ESP-IDF primary console, whether it is UART or USB Serial/JTAG;
+//   - converts CR, LF, and CRLF into one '\n';
+//   - does not echo characters. Menu items are accepted immediately, while line input
+//     performs its own echo in read_console_line().
+static void console_rx_task(void* arg)
+{
+    bool last_was_cr = false;
+
+    while (true)
+    {
+        uint8_t ch = 0;
+        const ssize_t n = read(STDIN_FILENO, &ch, 1);
+
+        if (n == 1)
+        {
+            if (ch == '\r')
+            {
+                const uint8_t nl = '\n';
+                xQueueSend(console_rx_queue, &nl, 0);
+                last_was_cr = true;
+                continue;
+            }
+
+            if (ch == '\n')
+            {
+                if (last_was_cr)
+                {
+                    last_was_cr = false;
+                    continue;
+                }
+
+                const uint8_t nl = '\n';
+                xQueueSend(console_rx_queue, &nl, 0);
+                continue;
+            }
+
+            last_was_cr = false;
+            xQueueSend(console_rx_queue, &ch, 0);
+            continue;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(kConsolePollDelayMs));
+    }
+}
+
+static esp_err_t setup_stdio_console()
 {
     setvbuf(stdin, nullptr, _IONBF, 0);
     setvbuf(stdout, nullptr, _IONBF, 0);
 
-    const int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    if (flags >= 0)
+    console_rx_queue = xQueueCreate(kConsoleQueueLen, sizeof(uint8_t));
+    if (console_rx_queue == nullptr)
     {
-        fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+        return ESP_ERR_NO_MEM;
     }
+
+    const BaseType_t ok = xTaskCreate(
+        console_rx_task,
+        "console_rx",
+        3072,
+        nullptr,
+        5,
+        nullptr
+    );
+
+    return ok == pdPASS ? ESP_OK : ESP_FAIL;
 }
 
-// Read one byte from the console. Returns -1 when no character is currently available.
 static int read_console_char()
 {
-    unsigned char ch = 0;
-    const ssize_t n = read(STDIN_FILENO, &ch, 1);
-    if (n == 1)
+    if (console_rx_queue == nullptr)
+    {
+        return -1;
+    }
+
+    uint8_t ch = 0;
+    if (xQueueReceive(console_rx_queue, &ch, 0) == pdTRUE)
     {
         return ch;
     }
+
     return -1;
 }
 
@@ -175,45 +235,44 @@ static void reset_line_reader()
 }
 
 // Remove any already-buffered keyboard input before showing a new prompt.
-// This prevents a previous Enter/key press from being consumed by the next menu state.
+// This prevents a previous key press from being consumed by the next menu state.
 static void clear_console_input()
 {
-    while (read_console_char() >= 0)
+    if (console_rx_queue != nullptr)
     {
-        // drain
+        uint8_t dummy = 0;
+        while (xQueueReceive(console_rx_queue, &dummy, 0) == pdTRUE)
+        {
+            // Drain queued input.
+        }
     }
-    skip_next_lf_ = false;
+
     reset_line_reader();
 }
 
-// Non-blocking line editor with local echo and backspace support.
-// Returns true only after a full line is completed by CR/LF.
+// Line input editor used only where a complete text line is required.
+// For example: AC parameter input such as "24,1,2,0".
+// This function echoes locally using printf(), which works well with a UART console.
+// On USB Serial/JTAG console, character echo may be delayed by the USB console backend.
 static bool read_console_line(char* out, size_t out_size)
 {
     int ch;
+
     while ((ch = read_console_char()) >= 0)
     {
-        if (ch == '\n' && skip_next_lf_)
+        if (ch == '\n')
         {
-            skip_next_lf_ = false;
-            continue;
-        }
-
-        skip_next_lf_ = false;
-
-        if (ch == '\r' || ch == '\n')
-        {
-            if (ch == '\r')
-            {
-                skip_next_lf_ = true;
-            }
-
             std::printf("\r\n");
 
             line_buf[line_len] = '\0';
-            std::snprintf(out, out_size, "%s", line_buf);
+
+            if (out != nullptr && out_size > 0)
+            {
+                std::snprintf(out, out_size, "%s", line_buf);
+            }
+
             reset_line_reader();
-            return true;        // Empty line is also a valid confirmation.
+            return true;
         }
 
         if (ch == '\b' || ch == 0x7F)
@@ -222,9 +281,8 @@ static bool read_console_line(char* out, size_t out_size)
             {
                 --line_len;
                 line_buf[line_len] = '\0';
-
-                // Move cursor back, overwrite the character with space, then move back again.
                 std::printf("\b \b");
+                fflush(stdout);
             }
             continue;
         }
@@ -236,8 +294,8 @@ static bool read_console_line(char* out, size_t out_size)
                 line_buf[line_len++] = static_cast<char>(ch);
                 line_buf[line_len] = '\0';
 
-                // Local echo. Many ESP-IDF console setups do not echo input automatically.
                 std::printf("%c", ch);
+                fflush(stdout);
             }
         }
     }
@@ -245,27 +303,32 @@ static bool read_console_line(char* out, size_t out_size)
     return false;
 }
 
-// Read one menu selection from a completed input line. The first non-space
-// character is used, so "1" and "  1" are treated the same.
+// Read one menu key immediately. This is used by ordinary menus and "press any key"
+// prompts, so it does not wait for Enter. The key is echoed with a newline to keep
+// menu output readable on a UART console.
 static bool read_menu_char(char& out)
 {
-    char input[160] = {};
-
-    if (!read_console_line(input, sizeof(input)))
+    const int ch = read_console_char();
+    if (ch < 0)
     {
         return false;
     }
 
-    for (size_t i = 0; input[i] != '\0'; ++i)
+    out = static_cast<char>(ch);
+
+    if (ch == '\n')
     {
-        if (!std::isspace(static_cast<unsigned char>(input[i])))
-        {
-            out = input[i];
-            return true;
-        }
+        std::printf("\r\n");
+    }
+    else if (std::isprint(static_cast<unsigned char>(ch)))
+    {
+        std::printf("%c\r\n", ch);
+    }
+    else
+    {
+        std::printf("\r\n");
     }
 
-    out = '\n';        // User pressed Enter on an empty line.
     return true;
 }
 
@@ -684,7 +747,6 @@ static void main_menu_job()
                 break;
             }
 
-            clear_console_input();
         }
         break;
 
@@ -707,12 +769,12 @@ static void capture_job()
         if (ac.is_celsius())
         {
             std::printf("\r\nNow performing IR AC pairing.\r\n");
-            std::printf("Please set AC remote to <Cooling mode, 25C>, then press Enter to continue...\r\n");
+            std::printf("Please set AC remote to <Cooling mode, 25C>, then press any key to continue...\r\n");
         }
         else
         {
             std::printf("\r\nNow performing IR AC pairing.\r\n");
-            std::printf("Please set AC remote to <Cooling mode, 78F>, then press Enter to continue...\r\n");
+            std::printf("Please set AC remote to <Cooling mode, 78F>, then press any key to continue...\r\n");
         }
         clear_console_input();
         l2_state = L2State::Step2;
@@ -753,7 +815,7 @@ static void capture_job()
         break;
 
     case L2State::Step4:
-        std::printf("Now press Enter to return to the main menu and AC control can begin...\r\n");
+        std::printf("Now press any key to return to the main menu and AC control can begin...\r\n");
         clear_console_input();
         l2_state = L2State::Step5;
         break;
@@ -826,7 +888,6 @@ static void ac_control_job()
                 break;
             }
 
-            clear_console_input();
         }
         break;
 
@@ -947,7 +1008,7 @@ static void backup_job()
             std::printf("\r\nThis function is only available after pairing\r\n");
         }
 
-        std::printf("Press Enter to continue\r\n");
+        std::printf("Press any key to continue\r\n");
         clear_console_input();
         l2_state = L2State::Step2;
         break;
@@ -957,7 +1018,6 @@ static void backup_job()
         {
             main_state = L1State::MainMenu;
             l2_state = L2State::Step1;
-            clear_console_input();
         }
         break;
 
@@ -977,7 +1037,7 @@ static void restore_job()
     case L2State::Step1:
         if (!load_ac_config(ir_format, ir_data, is_celsius))
         {
-            std::printf("Restore failed. Press Enter to continue\r\n");
+            std::printf("Restore failed. Press any key to continue\r\n");
             clear_console_input();
             l2_state = L2State::Step2;
             break;
@@ -1007,7 +1067,7 @@ static void restore_job()
             std::printf("AC control library initialization failed...\r\n");
         }
 
-        std::printf("Press Enter to continue\r\n");
+        std::printf("Press any key to continue\r\n");
         clear_console_input();
         l2_state = L2State::Step2;
         break;
@@ -1043,7 +1103,7 @@ static void find_next_job()
             std::printf("No other matching protocols, AC control library needs re-initialization\r\n");
         }
 
-        std::printf("Press Enter to continue...\r\n");
+        std::printf("Press any key to continue...\r\n");
         clear_console_input();
         l2_state = L2State::Step2;
         break;
@@ -1065,7 +1125,6 @@ static void find_next_job()
 // for protocols that cannot be decoded directly from the captured signal.
 static void load_predef_job()
 {
-    char input[64] = {};
     char ch = 0;
 
     switch (l2_state)
@@ -1077,10 +1136,15 @@ static void load_predef_job()
         break;
 
     case L2State::Step2:
-        if (read_console_line(input, sizeof(input)))
+        if (read_menu_char(ch))
         {
             int choice = -1;
-            std::sscanf(input, "%d", &choice);
+
+            if (ch >= '0' && ch <= '9')
+            {
+                choice = ch - '0';
+            }
+
             std::printf("Selected option %d\r\n", choice);
 
             if (choice >= 0 && choice <= 255 && ac.init_predefined(static_cast<uint8_t>(choice)))
@@ -1092,14 +1156,13 @@ static void load_predef_job()
                 const bc7215DataVarPkt_t* pkt = ac.data_packet();
                 print_data(pkt, data_packet_storage_size(pkt));
 
-                std::printf("Initialization successful !!! Press Enter to continue\r\n");
+                std::printf("Initialization successful !!! Press any key to continue\r\n");
             }
             else
             {
-                std::printf("Initialization failed.... Press Enter to continue\r\n");
+                std::printf("Initialization failed.... Press any key to continue\r\n");
             }
 
-            clear_console_input();
             l2_state = L2State::Step3;
         }
         break;
@@ -1223,10 +1286,11 @@ static void ir_parsing_job()
 
 // -----------------------------
 // app_main
-// -----------------------------
+// ----------------------------
+
 extern "C" void app_main(void)
 {
-    setup_stdio_nonblocking();
+    ESP_ERROR_CHECK(setup_stdio_console());
 
     ESP_ERROR_CHECK(init_nvs());
 
