@@ -59,7 +59,6 @@ esp_err_t BC7215AC::begin()
     use_fahrenheit_ = false;
     format_received_ = false;
     timer_start_ms_ = 0;
-    reset_samples_();
 
     if (!bc7215_.started())
     {
@@ -105,7 +104,6 @@ bool BC7215AC::is_celsius() const { return !use_fahrenheit_; }
 // AC pairing, while mode 0 is used for normal IR decoding/parsing.
 void BC7215AC::start_capture(uint8_t rx_mode)
 {
-    reset_samples_();
     format_received_ = false;
 
     // Switch the chip to receive mode and clear any old decoded data before
@@ -115,6 +113,7 @@ void BC7215AC::start_capture(uint8_t rx_mode)
     bc7215_.set_rx_mode(rx_mode);
     bc7215_.clr_data();
     bc7215_.clr_format();
+	sample_count = 0;
     timer_start_ms_ = now_ms_();
 }
 
@@ -151,7 +150,6 @@ bool BC7215AC::signal_captured()
                 {
                     bc7215_.get_format(sample_format[sample_count]);
                     format_received_ = true;
-                    link_sample_message_(sample_count);
                 }
                 ++sample_count;
             }
@@ -223,12 +221,10 @@ bool BC7215AC::init()
 // The packets are converted into the same single-sample layout used after capture.
 bool BC7215AC::init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
 {
-    reset_samples_();
     sample_data[0] = data;
     sample_format[0] = format;
     sample_status[0] = format.signature.inByte;
     sample_count = 1;
-    link_sample_message_(0);
 
     if (use_fahrenheit_)
     {
@@ -451,36 +447,6 @@ uint16_t BC7215AC::data_packet_bytes_(const bc7215DataVarPkt_t* pkt)
     return static_cast<uint16_t>((pkt->bitLen + 7) / 8 + 2);
 }
 
-// Clear all capture buffers and combined-message descriptors before a new
-// capture or predefined-data load.
-void BC7215AC::reset_samples_()
-{
-    sample_count = 0;
-    std::memset(sample_status, 0, sizeof(sample_status));
-    std::memset(sample_data, 0, sizeof(sample_data));
-    std::memset(sample_format, 0, sizeof(sample_format));
-    std::memset(received_message_, 0, sizeof(received_message_));
-
-    for (uint8_t i = 0; i < kMaxSamples; ++i)
-    {
-        received_message_[i].bitLen = 0;
-    }
-}
-
-// Build one combined-message descriptor by linking a captured format packet
-// with the matching data packet. bitLen == 0 marks this as a combined message.
-void BC7215AC::link_sample_message_(uint8_t index)
-{
-    if (index >= kMaxSamples)
-    {
-        return;
-    }
-
-    received_message_[index].bitLen = 0;
-    received_message_[index].body.msg.fmt = &sample_format[index];
-    received_message_[index].body.msg.datPkt = reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[index]);
-}
-
 // Some decodes are marked as bit-reversed/inverted by the chip/library.
 // Correct those payload bytes in-place before giving samples to the AC matcher.
 bool BC7215AC::reverse_marked_samples_()
@@ -526,13 +492,11 @@ bool BC7215AC::copy_predefined_data_(uint8_t index)
         return false;
     }
 
-    reset_samples_();
     sample_data[0].bitLen = src_data->bitLen;
     std::memcpy(&sample_data[0].data, src_data->data, copy_bytes);
     sample_format[0] = *src_format;
     sample_status[0] = sample_format[0].signature.bits.sig;
     sample_count = 1;
-    link_sample_message_(0);
     return true;
 }
 

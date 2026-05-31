@@ -14,9 +14,11 @@ An official Windows demo application is provided. After connecting the developme
 
 ![Demo Software Screenshot](./docs/img/Screenshot_ac_ctrl.png)
 
-In addition to the demo software, several microcontroller examples are provided, including basic IR encoding and decoding, IR communication, and air conditioner control. The selected processors include STM32 and C51. The STM32 examples include complete STM32 CubeIDE project files, which can be imported directly into CubeIDE after downloading.
+In addition to the demo software, several microcontroller examples are provided, including basic IR encoding and decoding, IR communication, and air conditioner control. The selected processors include STM32 and C51. The STM32 examples include complete **STM32 CubeIDE** project files, which can be imported directly into CubeIDE after downloading.
 
-The ESP-IDF(ESP32) example  uses the FreeRTOS and C++ which is the standard ESP-IDF setup. If you want to port it to other similar environments, you can refer to this example.
+The **ESP-IDF(ESP32)** example  uses the FreeRTOS and C++ which is the standard ESP-IDF setup. If you want to port it to other similar environments, you can refer to this example.
+
+The **Linux** edition is written in C++ with makefile as a complete project, can be compiled and run in both desktop and embedded environments.
 
 Directory structure:
 
@@ -30,14 +32,15 @@ root/
 │  ├─ bc7215a_ac_lib_manual_en.pdf      <- BC7215A AC library manual
 │  ├─ bc7215ev_manual_en.pdf            <- Dev board and software manual
 │  ├─ programming_flowchart.pdf         <- AC library prog flowchart
-│  ├─ ac_lib_demo_code(pseudo)_en.pdf   <- AC library pseudocode
+│  ├─ ac_lib_demo_code(pseudo)-en.pdf   <- AC library pseudocode
 │  ├─ bc7215_lib_examples_en.pdf        <- Low-level example documentation
 │  ├─ stm32_ac_demo_manual_en.pdf       <- STM32 AC control example documentation
 │  ├─ ESP-IDF_example_doc_en.pdf        <- ESP32 AC control example documentation
+│  ├─ linux_example_doc_en.pdf          <- Linux AC control example documentation
 │  ├─ trouble_shooting_en.pdf           <- BC7215(A) chip troubleshooting
 │  ├─ release_notes.txt                 <- AC library release notes
 │  ├─ supported_ac_brand_list_en.pdf    <- List of supported AC brands
-│  └─ ac_lib_issue_report.pdf           <- AC library issue report form
+│  └─ ac_lib_issue_feedback.pdf         <- AC library issue feedback form
 ├─ examples/
 │  ├─ C51/                              <- Low-level examples for C51
 │  │  ├─ ir_switch/                     <- IR controlled switch example
@@ -47,12 +50,13 @@ root/
 │  │  ├─ ir_switch/
 │  │  ├─ comm/
 │  │  └─ prog_remote/
-│  ├─ ESP-IDF/                          <- AC Control ESP-IDF version (C++/FreeRTOS)
-│  └─ STM32_CubeIDE/                    <- STM32 CubeIDE version
-│     ├─ ir_switch/
-│     ├─ comm/
-│     ├─ prog_remote/
-│     └─ BC7215AC/                      <- Air conditioner control example
+│  ├─ ESP-IDF/                          <- AC Control example ESP-IDF version (C++/FreeRTOS)
+│  ├─ STM32_CubeIDE/                    <- STM32 CubeIDE version
+│  │  ├─ ir_switch/
+│  │  ├─ comm/
+│  │  ├─ prog_remote/
+│  │  └─ BC7215AC/                      <- AC control example STM32 version
+│  └─ Linux/                            <- AC control example Linux version (Desktop/Embedded)
 ├─ util/                                <- Windows demo application
 ├─ README.md
 └─ LICENSE
@@ -70,7 +74,7 @@ Documents for developers:
 
 [AC library programming flowchart](./docs/programming_flowchart.pdf)
 
-[AC library example pseudocode](./docs/ac_lib_demo_code(pseudo)_en.pdf)
+[AC library example pseudocode](./docs/ac_lib_demo_code(pseudo)-en.pdf)
 
 [BC7215(A) Low-level driver example documentation](./docs/bc7215_lib_examples_en.pdf)
 
@@ -78,4 +82,8 @@ Documents for developers:
 
 [ESP-IDF(ESP32) AC Control example documentation](./docs/ESP-IDF_example_doc_en.pdf)
 
+[Linux AC control example documentation](./docs/linux_example_doc_en.pdf)
+
 [BC7215(A) chip troubleshooting](./docs/trouble_shooting_en.pdf)
+
+[AC control library issue feedback form](./docs/ac_lib_issue_feedback.pdf)

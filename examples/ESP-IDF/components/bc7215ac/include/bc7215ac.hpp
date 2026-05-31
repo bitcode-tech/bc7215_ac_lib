@@ -28,6 +28,19 @@ namespace bc7215
 //   4. Parse later captured IR frames back into temp/mode/fan/power states.
 class BC7215AC
 {
+private:
+    // Maximum number of IR frames retained during pairing/parsing.
+    static constexpr uint8_t kMaxSamples = 4;
+    // Once at least one frame is received, this idle time marks the end of the
+    // current capture sequence.
+    static constexpr uint32_t kCaptureIdleMs = 200;
+    // Small guard delay after switching BC7215 between RX and TX modes.
+    static constexpr uint32_t kModeSwitchDelayMs = 50;
+    // Status bits returned by the low-level library. Reverse means the received
+    // data bits need to be inverted before passing them to the AC protocol library.
+    static constexpr uint8_t kReverseStatusBit = 0x40;
+    static constexpr uint8_t kErrStatusBit = 0x80;
+
 public:
     // Construct the wrapper and its embedded low-level BC7215 driver.
     // Hardware initialization is intentionally delayed until begin().
@@ -55,9 +68,9 @@ public:
     // Captured sample buffers. Some AC protocols require more than one IR frame
     // for reliable identification, so up to kMaxSamples frames are stored.
     uint8_t            sample_count = 0;
-    uint8_t            sample_status[4] = {};
-    bc7215DataMaxPkt_t sample_data[4] = {};
-    bc7215FormatPkt_t  sample_format[4] = {};
+    uint8_t            sample_status[kMaxSamples] = {};
+    bc7215DataMaxPkt_t sample_data[kMaxSamples] = {};
+    bc7215FormatPkt_t  sample_format[kMaxSamples] = {};
 
     // Temperature unit selection. Changing unit invalidates the current
     // AC-library match because Celsius and Fahrenheit tables/offsets differ.
@@ -106,24 +119,18 @@ public:
     const BC7215& driver() const { return bc7215_; }
 
 private:
-    // Maximum number of IR frames retained during pairing/parsing.
-    static constexpr uint8_t kMaxSamples = 4;
-    // Once at least one frame is received, this idle time marks the end of the
-    // current capture sequence.
-    static constexpr uint32_t kCaptureIdleMs = 200;
-    // Small guard delay after switching BC7215 between RX and TX modes.
-    static constexpr uint32_t kModeSwitchDelayMs = 50;
-    // Status bits returned by the low-level library. Reverse means the received
-    // data bits need to be inverted before passing them to the AC protocol library.
-    static constexpr uint8_t kReverseStatusBit = 0x40;
-    static constexpr uint8_t kErrStatusBit = 0x80;
-
     // Embedded low-level hardware driver. This wrapper owns it directly so
     // initialization order is well-defined.
     BC7215 bc7215_;
     // Combined-message descriptors link each captured format packet to its
     // corresponding data packet without copying both into another large buffer.
-    bc7215CombinedMsg_t received_message_[kMaxSamples] = {};
+    const bc7215CombinedMsg_t received_message_[kMaxSamples] = {
+		{.bitLen = 0, .body = {.msg = {.fmt = &sample_format[0], .datPkt = reinterpret_cast<bc7215DataVarPkt_t*>(&sample_data[0])}}},
+		{.bitLen = 0, .body = {.msg = {.fmt = &sample_format[1], .datPkt = reinterpret_cast<bc7215DataVarPkt_t*>(&sample_data[1])}}},
+		{.bitLen = 0, .body = {.msg = {.fmt = &sample_format[2], .datPkt = reinterpret_cast<bc7215DataVarPkt_t*>(&sample_data[2])}}},
+		{.bitLen = 0, .body = {.msg = {.fmt = &sample_format[3], .datPkt = reinterpret_cast<bc7215DataVarPkt_t*>(&sample_data[3])}}}
+	};
+
     uint64_t            timer_start_ms_ = 0;
     // Last known command state. Used when a protocol has no dedicated ON command:
     // on() can resend the previous temperature/mode/fan/key setting instead.
@@ -141,8 +148,6 @@ private:
     static uint16_t data_packet_bytes_(const bc7215DataVarPkt_t* pkt);
 
     // Internal sample/message buffer management.
-    void reset_samples_();
-    void link_sample_message_(uint8_t index);
     bool reverse_marked_samples_();
     bool copy_predefined_data_(uint8_t index);
 

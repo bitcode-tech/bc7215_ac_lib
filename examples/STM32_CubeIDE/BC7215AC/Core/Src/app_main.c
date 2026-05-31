@@ -45,12 +45,17 @@ char inputLine[16];
 bc7215DataMaxPkt_t  sampleData[4];
 bc7215FormatPkt_t   sampleFormat[4];
 uint8_t             sampleStatus[4];
-bc7215CombinedMsg_t rcvdMessage[4];
+const bc7215CombinedMsg_t rcvdMessage[4] = {
+	{.bitLen = 0, .body = {.msg = {.fmt = &sampleFormat[0], .datPkt = (bc7215DataVarPkt_t*)&sampleData[0]}}},
+	{.bitLen = 0, .body = {.msg = {.fmt = &sampleFormat[1], .datPkt = (bc7215DataVarPkt_t*)&sampleData[1]}}},
+	{.bitLen = 0, .body = {.msg = {.fmt = &sampleFormat[2], .datPkt = (bc7215DataVarPkt_t*)&sampleData[2]}}},
+	{.bitLen = 0, .body = {.msg = {.fmt = &sampleFormat[3], .datPkt = (bc7215DataVarPkt_t*)&sampleData[3]}}}
+};
+
 bc7215DataMaxPkt_t  backupBaseData;
 uint8_t             backupStatus;
 uint8_t             sampleCount = 0;
 bool                acInitOK = false;
-bool				complexMode;
 bool				formatReceived;
 uint32_t            timerStartTime = 0;
 
@@ -220,20 +225,13 @@ void Print_Data(const void* data, uint8_t len)
 }
 
 // 开始采样
-void Ac_StartCapture(void)
+void Ac_StartCapture(uint8_t rx_mode)
 {
     sampleCount = 0;
     formatReceived = false;
     bc7215_set_rx();
     HAL_Delay(50);
-    if (complexMode)
-    {
-    	bc7215_set_rx_mode(1);
-    }
-    else
-    {
-    	bc7215_set_rx_mode(0);
-    }
+   	bc7215_set_rx_mode(rx_mode);
     bc7215_clr_data();
     bc7215_clr_format();
 }
@@ -295,11 +293,11 @@ bool Ac_Init(void)
     	}
     	if (acIsFahrenheit)
     	{
-    		acInitOK = bc7215_ac_init_f(sampleStatus[0], (bc7215DataVarPkt_t*)(&rcvdMessage[0]));
+    		acInitOK = bc7215_ac_init_f(sampleStatus[0], (const bc7215DataVarPkt_t*)(&rcvdMessage[0]));
     	}
     	else
     	{
-    		acInitOK = bc7215_ac_init(sampleStatus[0], (bc7215DataVarPkt_t*)(&rcvdMessage[0]));
+    		acInitOK = bc7215_ac_init(sampleStatus[0], (const bc7215DataVarPkt_t*)(&rcvdMessage[0]));
     	}
     }
     else if (sampleCount > 1)
@@ -353,11 +351,11 @@ bool Ac_Init_Predef(uint8_t index)
 
     	if (acIsFahrenheit)
     	{
-    		acInitOK = bc7215_ac_init_f(sampleStatus[0], (bc7215DataVarPkt_t*)&rcvdMessage[0]);
+    		acInitOK = bc7215_ac_init_f(sampleStatus[0], (const bc7215DataVarPkt_t*)&rcvdMessage[0]);
     	}
     	else
     	{
-    		acInitOK = bc7215_ac_init(sampleStatus[0], (bc7215DataVarPkt_t*)&rcvdMessage[0]);
+    		acInitOK = bc7215_ac_init(sampleStatus[0], (const bc7215DataVarPkt_t*)&rcvdMessage[0]);
     	}
     }
     return acInitOK;
@@ -452,8 +450,7 @@ void Job_Capture(void)
         {
             printf("Now please aim at IR receiver and press < Fan Speed > button on remote. \r\nWill automatically "
                    "proceed to next step after receiving signal...\r\n");
-            complexMode = true;
-            Ac_StartCapture();
+            Ac_StartCapture(1);
             l2State = STEP3;
         }
         break;
@@ -484,7 +481,6 @@ void Job_Capture(void)
             else
             {
             	printf("BC7215A not in complex mode, trying again...\r\n");
-            	complexMode = true;
             	l2State = STEP1;
             }
         }
@@ -746,8 +742,7 @@ void Job_Parsing()
                    "it.\r\n");
             printf("\r\nBC7215A is now in RX mode, ready to decode. Press Enter exit\r\n");
 
-            complexMode = false;
-            Ac_StartCapture();
+            Ac_StartCapture(0);
             Clear_Input();
             l2State = STEP2;
         }
@@ -798,8 +793,7 @@ void Job_Parsing()
             {
                 printf("Parsing failed, please check if the IR signal is from the same remote.\r\n");
             }
-            complexMode = false;
-            Ac_StartCapture();
+            Ac_StartCapture(0);
         }
         if (Get_Input_Line())
         {
@@ -1010,8 +1004,6 @@ void Job_ChooseUnit(void)
 
 void App_Init(appConfig_t* hwConfig)
 {
-	uint8_t	sampleNum;
-
     // 初始化终端接口
 	UartRing_Init(hwConfig->consolePort);
 
@@ -1020,14 +1012,6 @@ void App_Init(appConfig_t* hwConfig)
 
     // 初始进入发送模式
     bc7215_set_tx();
-
-    // 初始化复合信息指针，此指针整个运行期间不变
-    for (sampleNum = 0; sampleNum<4; sampleNum++)
-    {
-        rcvdMessage[sampleNum].bitLen = 0;
-        rcvdMessage[sampleNum].body.msg.fmt = &sampleFormat[sampleNum];
-        rcvdMessage[sampleNum].body.msg.datPkt = (bc7215DataVarPkt_t*)&sampleData[sampleNum];
-    }
 
     printf("System Initialized.\r\n");
 }
