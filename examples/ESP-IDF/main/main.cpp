@@ -41,9 +41,9 @@ static constexpr uint32_t kConsolePollDelayMs = 10;
 // BC7215 serial: ESP RX=GPIO25, ESP TX=GPIO33, BC7215 BUSY -> ESP CTS=GPIO26, MOD=GPIO27.
 // Do not use UART0 here if UART0 is your ESP-IDF console.
 static constexpr uart_port_t BC_UART = UART_NUM_1;
-static constexpr gpio_num_t  BC_TX_PIN = GPIO_NUM_33;              // ESP TX -> BC7215 RX
-static constexpr gpio_num_t  BC_RX_PIN = GPIO_NUM_25;              // ESP RX <- BC7215 TX
-static constexpr gpio_num_t  BC_BUSY_CTS_PIN = GPIO_NUM_26;        // BC7215 BUSY -> ESP UART CTS
+static constexpr gpio_num_t  BC_TX_PIN = GPIO_NUM_25;              // ESP TX -> BC7215 RX
+static constexpr gpio_num_t  BC_RX_PIN = GPIO_NUM_33;              // ESP RX <- BC7215 TX
+static constexpr gpio_num_t  BC_BUSY_PIN = GPIO_NUM_26;        // BC7215 BUSY -> ESP UART CTS
 static constexpr gpio_num_t  BC_MOD_PIN = GPIO_NUM_27;             // ESP output -> BC7215 MOD
 
 // Main polling interval for the cooperative state machine.
@@ -107,7 +107,7 @@ enum class L2State
 // Global objects
 // -----------------------------
 // These are global/static so their buffers do not consume app_main task stack.
-static bc7215::BC7215AC ac(BC_UART, BC_TX_PIN, BC_RX_PIN, BC_BUSY_CTS_PIN, BC_MOD_PIN);
+static bc7215::BC7215AC ac(BC_UART, BC_RX_PIN, BC_TX_PIN, BC_BUSY_PIN, BC_MOD_PIN);
 
 // -----------------------------
 // Global runtime variables
@@ -1303,7 +1303,7 @@ extern "C" void app_main(void)
 
     std::printf("\r\nSystem initialized.\r\n");
     std::printf("UART=%d TX=%d RX=%d CTS/BUSY=%d MOD=%d\r\n", static_cast<int>(BC_UART), static_cast<int>(BC_TX_PIN),
-        static_cast<int>(BC_RX_PIN), static_cast<int>(BC_BUSY_CTS_PIN), static_cast<int>(BC_MOD_PIN));
+        static_cast<int>(BC_RX_PIN), static_cast<int>(BC_BUSY_PIN), static_cast<int>(BC_MOD_PIN));
 
     // Main cooperative loop. Each job performs one small piece of work and returns;
     // delay_ms() yields to FreeRTOS before polling again.

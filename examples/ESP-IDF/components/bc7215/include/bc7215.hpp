@@ -45,12 +45,12 @@ public:
      * the ESP-IDF scheduler and drivers are fully ready.
      *
      * @param uart_num UART port used for BC7215 communication.
-     * @param tx_pin ESP32 TX pin connected to BC7215 RX.
-     * @param rx_pin ESP32 RX pin connected to BC7215 TX.
-     * @param cts_busy_pin ESP32 CTS input connected to BC7215 BUSY output.
+     * @param esp32_tx_pin ESP32 TX pin connected to BC7215 RX.
+     * @param esp32_rx_pin ESP32 RX pin connected to BC7215 TX.
+     * @param esp32_cts_pin ESP32 CTS input connected to BC7215 BUSY output.
      * @param mod_pin ESP32 GPIO connected to BC7215 MOD pin.
      */
-    BC7215(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t cts_busy_pin, gpio_num_t mod_pin);
+    BC7215(uart_port_t uart_num, gpio_num_t esp32_tx_pin, gpio_num_t esp32_rx_pin, gpio_num_t esp32_cts_pin, gpio_num_t mod_pin);
 
     /**
      * @brief Stop the driver and release ESP-IDF resources.
@@ -145,9 +145,9 @@ private:
 
     // Hardware mapping configured by the constructor.
     uart_port_t uart_num_;
-    gpio_num_t  tx_pin_;
-    gpio_num_t  rx_pin_;
-    gpio_num_t  cts_busy_pin_;
+    gpio_num_t  esp32_tx_pin_;
+    gpio_num_t  esp32_rx_pin_;
+    gpio_num_t  esp32_cts_pin_;
     gpio_num_t  mod_pin_;
 
     // Runtime resources created by begin() and released by end().

@@ -34,8 +34,11 @@ private:
     // Once at least one frame is received, this idle time marks the end of the
     // current capture sequence.
     static constexpr uint32_t kCaptureIdleMs = 200;
-    // Small guard delay after switching BC7215 between RX and TX modes.
+    // Delay time for different situations.
     static constexpr uint32_t kModeSwitchDelayMs = 50;
+    static constexpr uint32_t kCmdIntervalDelayMs = 200;
+    static constexpr uint32_t kTxCheckIntervalMs = 50;
+    static constexpr uint32_t kTransmitTimoutLoops = 60;
     // Status bits returned by the low-level library. Reverse means the received
     // data bits need to be inverted before passing them to the AC protocol library.
     static constexpr uint8_t kReverseStatusBit = 0x40;
@@ -45,7 +48,7 @@ public:
     // Construct the wrapper and its embedded low-level BC7215 driver.
     // Hardware initialization is intentionally delayed until begin().
     explicit BC7215AC(
-        uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t cts_busy_pin, gpio_num_t mod_pin);
+        uart_port_t uart_num, gpio_num_t esp32_tx_pin, gpio_num_t esp32_rx_pin, gpio_num_t esp32_cts_pin, gpio_num_t mod_pin);
 
     // Initialize the underlying UART/GPIO driver and put BC7215 into TX mode.
     esp_err_t begin();
@@ -112,6 +115,7 @@ public:
     bool                      is_busy() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t*  format_packet() const;
+	bool					  replace_base(bc7215DataMaxPkt_t& dataPkt);
     const char*               lib_version() const;
 
     // Optional access to the lower-level driver for advanced/debug operations.
@@ -154,6 +158,9 @@ private:
     // Load the correct format into BC7215 and transmit either a normal data
     // packet or a combined format+data packet.
     void send_ac_cmd_(const bc7215DataVarPkt_t* data_pkt);
+
+	// Wait for a transmit to be completed, return false if timeout
+	bool wait_tx_complete();
 };
 
 }        // namespace bc7215

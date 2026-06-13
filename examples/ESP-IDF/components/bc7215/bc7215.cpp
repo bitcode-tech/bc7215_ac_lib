@@ -42,11 +42,11 @@ namespace bc7215
 // MOD GPIO and mutex.  This is also why only one active instance is supported.
 BC7215* BC7215::active_ = nullptr;
 
-BC7215::BC7215(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, gpio_num_t cts_busy_pin, gpio_num_t mod_pin)
+BC7215::BC7215(uart_port_t uart_num, gpio_num_t esp32_tx_pin, gpio_num_t esp32_rx_pin, gpio_num_t esp32_cts_pin, gpio_num_t mod_pin)
     : uart_num_(uart_num)
-    , tx_pin_(tx_pin)
-    , rx_pin_(rx_pin)
-    , cts_busy_pin_(cts_busy_pin)
+    , esp32_tx_pin_(esp32_tx_pin)
+    , esp32_rx_pin_(esp32_rx_pin)
+    , esp32_cts_pin_(esp32_cts_pin)
     , mod_pin_(mod_pin)
 {
     // Only store configuration here.  Do not touch ESP-IDF drivers before begin().
@@ -76,7 +76,7 @@ esp_err_t BC7215::begin(uint32_t rx_poll_ms, int rx_buffer_size, int tx_buffer_s
     }
 
     // MOD must be output-capable.  BUSY/CTS only needs to be a valid GPIO input.
-    if (!GPIO_IS_VALID_OUTPUT_GPIO(mod_pin_) || !GPIO_IS_VALID_GPIO(cts_busy_pin_))
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(mod_pin_) || !GPIO_IS_VALID_GPIO(esp32_cts_pin_))
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -145,8 +145,8 @@ esp_err_t BC7215::begin(uint32_t rx_poll_ms, int rx_buffer_size, int tx_buffer_s
     }
 
     // Map TX/RX/CTS pins to the selected UART.  RTS is not used.
-    err = uart_set_pin(uart_num_, gpio_to_uart_pin_(tx_pin_), gpio_to_uart_pin_(rx_pin_), UART_PIN_NO_CHANGE,
-        gpio_to_uart_pin_(cts_busy_pin_));
+    err = uart_set_pin(uart_num_, gpio_to_uart_pin_(esp32_tx_pin_), gpio_to_uart_pin_(esp32_rx_pin_), UART_PIN_NO_CHANGE,
+        gpio_to_uart_pin_(esp32_cts_pin_));
     if (err != ESP_OK)
     {
         goto fail;
@@ -154,7 +154,7 @@ esp_err_t BC7215::begin(uint32_t rx_poll_ms, int rx_buffer_size, int tx_buffer_s
 
     // BUSY is active-high, so pulldown keeps the CTS input idle during early
     // bring-up or if the external line is temporarily floating.
-    gpio_set_pull_mode(cts_busy_pin_, GPIO_PULLDOWN_ONLY);
+    gpio_set_pull_mode(esp32_cts_pin_, GPIO_PULLDOWN_ONLY);
     uart_flush_input(uart_num_);
 
     // Connect platform-dependent operations expected by the original C library.

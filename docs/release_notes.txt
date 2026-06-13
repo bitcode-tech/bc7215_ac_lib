@@ -55,3 +55,10 @@ V7.1	2026-05-03	1. Integrate bc7215 driver library V4.2.
 					2. Improved Fahrenheit parsing accuracy.
 					3. Improved example code.
 					4. More Fahrenheit dedicated protocol support.
+
+V7.2	2026-06-12	1. Integrate bc7215 driver library V4.3.
+                    2. Bug fixes
+					3. Improved ESP-IDF example and bug fix.
+					4. Now can have _NO_DEPRECATED compile option to remove deprecated code.
+					   for example: gcc -D _NO_DEPRECATED -c bc7215_ac_lib.c
+
