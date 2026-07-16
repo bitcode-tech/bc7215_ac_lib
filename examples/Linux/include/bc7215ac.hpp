@@ -43,7 +43,7 @@ public:
     bool signal_captured();
 
     bool init();
-    bool init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format);
+    bool init(uint8_t status, const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format);
     bool match_next();
 
     uint8_t predefined_count() const;
@@ -57,6 +57,7 @@ public:
     bool parse(int& temp, int& mode, int& fan, int& power);
 
     bool is_busy() const;
+	uint8_t status_byte() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t* format_packet() const;
     const char* lib_version() const;

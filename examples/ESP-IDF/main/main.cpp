@@ -61,6 +61,7 @@ static constexpr const char* kNvsNamespace = "bc7215_ac";
 static constexpr const char* kNvsKeyFormat = "format";        // bc7215FormatPkt_t
 static constexpr const char* kNvsKeyData = "data";            // bc7215DataVarPkt_t-compatible binary blob
 static constexpr const char* kNvsKeyUnit = "unit";            // 1=Celsius, 0=Fahrenheit
+static constexpr const char* kNvsKeyStatus = "status";        // uint8_t
 
 // -----------------------------
 // Menu text
@@ -125,6 +126,7 @@ static L2State go_back_state = L2State::Step1;
 static uint64_t                  start_time_ms = 0;
 static const bc7215DataVarPkt_t* data_pkt = nullptr;
 static const bc7215FormatPkt_t*  format_pkt = nullptr;
+static uint8_t					 ir_status = 0;
 static bc7215DataMaxPkt_t        ir_data = {};
 static bc7215FormatPkt_t         ir_format = {};
 
@@ -415,6 +417,7 @@ static bool save_ac_config()
         return false;
     }
 
+	uint8_t status = ac.status_byte();
     format_pkt = ac.format_packet();
     data_pkt = ac.data_packet();
 
@@ -452,6 +455,10 @@ static bool save_ac_config()
     }
     if (err == ESP_OK)
     {
+        err = nvs_set_u8(handle, kNvsKeyStatus, status);
+    }
+    if (err == ESP_OK)
+    {
         err = nvs_commit(handle);
     }
 
@@ -468,7 +475,7 @@ static bool save_ac_config()
 
 // Load the saved pairing result from NVS and validate the stored blob sizes before
 // passing them back to the BC7215AC library.
-static bool load_ac_config(bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, bool& is_celsius)
+static bool load_ac_config(uint8_t& status, bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, bool& is_celsius)
 {
     std::memset(&format, 0, sizeof(format));
     std::memset(&data, 0, sizeof(data));
@@ -520,6 +527,13 @@ static bool load_ac_config(bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, 
     }
 
     is_celsius = (unit != 0);
+    err = nvs_get_u8(handle, kNvsKeyStatus, &status);
+    if (err != ESP_OK)
+    {
+        std::printf("Read saved status failed: %s\r\n", esp_err_to_name(err));
+        nvs_close(handle);
+        return false;
+    }
     nvs_close(handle);
     return true;
 }
@@ -991,7 +1005,9 @@ static void backup_job()
             {
                 format_pkt = ac.format_packet();
                 data_pkt = ac.data_packet();
+				uint8_t status = ac.status_byte();
 
+				std::printf("\r\nStatus Byte: 0x%02X", status);
                 std::printf("\r\nFormat info: ");
                 print_data(format_pkt, sizeof(bc7215FormatPkt_t));
                 std::printf("Data: ");
@@ -1035,7 +1051,7 @@ static void restore_job()
     switch (l2_state)
     {
     case L2State::Step1:
-        if (!load_ac_config(ir_format, ir_data, is_celsius))
+        if (!load_ac_config(ir_status, ir_format, ir_data, is_celsius))
         {
             std::printf("Restore failed. Press any key to continue\r\n");
             clear_console_input();
@@ -1044,6 +1060,7 @@ static void restore_job()
         }
 
         std::printf("\r\nUsing saved configuration from NVS flash\r\n");
+		std::printf("Status byte: 0x%02X\r\n", ir_status);
         std::printf("Format info: ");
         print_data(&ir_format, sizeof(bc7215FormatPkt_t));
         std::printf("Data: ");
@@ -1058,7 +1075,7 @@ static void restore_job()
             ac.set_fahrenheit();
         }
 
-        if (ac.init(ir_data, ir_format))
+        if (ac.init(ir_status, ir_data, ir_format))
         {
             std::printf("AC control library initialization  ***SUCCESS*** !\r\n");
         }

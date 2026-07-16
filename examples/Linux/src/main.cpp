@@ -78,6 +78,7 @@ static L2State go_back_state = L2State::Step1;
 static uint64_t start_time_ms = 0;
 static const bc7215DataVarPkt_t* data_pkt = nullptr;
 static const bc7215FormatPkt_t* format_pkt = nullptr;
+static uint8_t ir_status = 0;
 static bc7215DataMaxPkt_t ir_data = {};
 static bc7215FormatPkt_t ir_format = {};
 
@@ -208,6 +209,7 @@ static void print_packet_payload(const bc7215DataVarPkt_t* pkt)
 struct SavedHeader {
     char magic[8];
     uint8_t unit;       // 1=Celsius, 0=Fahrenheit
+	uint8_t status;
     uint16_t format_len;
     uint16_t data_len;
 };
@@ -221,6 +223,7 @@ static bool save_ac_config()
         return false;
     }
 
+	uint8_t status = ac->status_byte();
     format_pkt = ac->format_packet();
     data_pkt = ac->data_packet();
     if (format_pkt == nullptr || data_pkt == nullptr) {
@@ -236,6 +239,7 @@ static bool save_ac_config()
     SavedHeader header {};
     std::memcpy(header.magic, "BCACLIN1", 8);
     header.unit = ac->is_celsius() ? 1 : 0;
+	header.status = status;
     header.format_len = static_cast<uint16_t>(sizeof(bc7215FormatPkt_t));
     header.data_len = static_cast<uint16_t>(data_len);
 
@@ -253,7 +257,7 @@ static bool save_ac_config()
 
 
 // Load previously saved AC protocol information from the binary file.
-static bool load_ac_config(bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, bool& is_celsius)
+static bool load_ac_config(uint8_t& status, bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, bool& is_celsius)
 {
     std::memset(&format, 0, sizeof(format));
     std::memset(&data, 0, sizeof(data));
@@ -287,7 +291,7 @@ static bool load_ac_config(bc7215FormatPkt_t& format, bc7215DataMaxPkt_t& data, 
         std::printf("Saved file read failed: %s\n", store_path.c_str());
         return false;
     }
-
+	status = header.status;
     is_celsius = (header.unit != 0);
     return true;
 }
@@ -605,8 +609,10 @@ static void backup_job()
     switch (l2_state) {
     case L2State::Step1:
         if (ac->init_ok && save_ac_config()) {
+			ir_status = ac->status_byte();
             format_pkt = ac->format_packet();
             data_pkt = ac->data_packet();
+			std::printf("Status byte: 0x%02X", ir_status);
             std::printf("\nFormat info: "); print_data(format_pkt, sizeof(bc7215FormatPkt_t));
             std::printf("Data: "); print_packet_payload(data_pkt);
             std::printf("Information saved to %s\n", store_path.c_str());
@@ -634,17 +640,18 @@ static void restore_job()
 
     switch (l2_state) {
     case L2State::Step1:
-        if (!load_ac_config(ir_format, ir_data, is_celsius)) {
+        if (!load_ac_config(ir_status, ir_format, ir_data, is_celsius)) {
             std::printf("Restore failed. Press Enter to continue.\n> ");
             clear_console_input();
             l2_state = L2State::Step2;
             break;
         }
         std::printf("\nUsing saved configuration from %s\n", store_path.c_str());
+		std::printf("Status byte: 0x%02X\n", ir_status);
         std::printf("Format info: "); print_data(&ir_format, sizeof(bc7215FormatPkt_t));
         std::printf("Data: "); print_data(ir_data.data, (ir_data.bitLen + 7) / 8);
         if (is_celsius) { ac->set_celsius(); } else { ac->set_fahrenheit(); }
-        if (ac->init(ir_data, ir_format)) {
+        if (ac->init(ir_status, ir_data, ir_format)) {
             std::printf("AC control library initialization SUCCESS.\n");
         } else {
             std::printf("AC control library initialization failed.\n");

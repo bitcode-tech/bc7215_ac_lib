@@ -159,6 +159,7 @@ bool BC7215AC::signal_captured()
 // Initialize/pair the AC library using the samples captured from a remote.
 bool BC7215AC::init()
 {
+	uint8_t pkt0_rev;
     init_ok = false;
 
     if (sample_count == 1) {
@@ -173,16 +174,17 @@ bool BC7215AC::init()
             init_ok = bc7215_ac_init(sample_status[0],
                                      reinterpret_cast<const bc7215DataVarPkt_t*>(&received_message_[0]));
         }
-    } else if (sample_count > 1) {
+    } else if ((sample_count > 1) && (sample_count <= 4)) {
         // Multi-segment AC commands are represented by the combined-message
         // array stored in received_message_.
+		pkt0_rev = sample_status[0]&kReverseStatusBit;
         if (!reverse_marked_samples_()) {
             return false;
         }
         if (use_fahrenheit_) {
-            init_ok = bc7215_ac_init2_f(sample_count, received_message_, 0);
+            init_ok = bc7215_ac_init2_f(sample_count | pkt0_rev, received_message_, 0);
         } else {
-            init_ok = bc7215_ac_init2(sample_count, received_message_, 0);
+            init_ok = bc7215_ac_init2(sample_count | pkt0_rev, received_message_, 0);
         }
     }
 
@@ -191,11 +193,11 @@ bool BC7215AC::init()
 
 
 // Initialize/pair the AC library from previously saved data and format packets.
-bool BC7215AC::init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
+bool BC7215AC::init(uint8_t status, const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
 {
     sample_data[0] = data;
     sample_format[0] = format;
-    sample_status[0] = format.signature.inByte;
+    sample_status[0] = status;
     sample_count = 1;
 
     if (use_fahrenheit_) {
@@ -310,6 +312,7 @@ const bc7215DataVarPkt_t* BC7215AC::off()
 // Parse the last captured IR command according to the currently paired protocol.
 bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 {
+	uint8_t pkt0_rev;
     if (!init_ok) {
         return false;
     }
@@ -320,12 +323,16 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
         } else {
             return false;
         }
-    } else if (sample_count > 1) {
+    } else if ((sample_count > 1) && (sample_count <= 4)) {
+		pkt0_rev = sample_status[0]&kReverseStatusBit;
         if (!reverse_marked_samples_()) {
             return false;
         }
-        bc7215_ac_replace_base(sample_count, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+        bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
     }
+	else {
+		return false;
+	}
 
     int8_t t = 0;
     int8_t m = 0;
@@ -363,6 +370,12 @@ bool BC7215AC::is_busy() const
     return bc7215_.is_busy();
 }
 
+
+// Return the base status byte currently used by the AC library.
+uint8_t BC7215AC::status_byte() const
+{
+    return bc7215_ac_get_base_status();
+}
 
 // Return the base data packet currently used by the AC library.
 const bc7215DataVarPkt_t* BC7215AC::data_packet() const
@@ -413,14 +426,19 @@ uint16_t BC7215AC::data_packet_bytes_(const bc7215DataVarPkt_t* pkt)
 
 
 
-// Apply bit inversion to samples marked with the BC7215 reverse-data status bit.
+// Check error and apply bit inversion to samples have different BC7215 reverse-data status bit than the 1st packet.
 bool BC7215AC::reverse_marked_samples_()
 {
-    for (uint8_t j = 0; j < sample_count && j < kMaxSamples; ++j) {
+ 	if (sample_status[0] & kErrStatusBit)				// check error bit in first packet
+	{
+		return false;
+	}
+	uint8_t Pkt0Rev = sample_status[0]&kReverseStatusBit;	// get REV bit in first packet
+    for (uint8_t j = 1; j < sample_count && j < kMaxSamples; ++j) {
         if (sample_status[j] & kErrStatusBit) {
             return false;
         }
-        if ((sample_status[j] & kReverseStatusBit) == 0) {
+        if ((sample_status[j] & kReverseStatusBit) == Pkt0Rev) {
             continue;
         }
 
@@ -429,7 +447,7 @@ bool BC7215AC::reverse_marked_samples_()
         for (uint16_t i = 0; i < safe_bytes; ++i) {
             sample_data[j].data[i] = static_cast<uint8_t>(~sample_data[j].data[i]);
         }
-        sample_status[j] = static_cast<uint8_t>(sample_status[j] & ~kReverseStatusBit);
+        sample_status[j] = static_cast<uint8_t>(sample_status[j] & ~kReverseStatusBit) | Pkt0Rev;
     }
     return true;
 }

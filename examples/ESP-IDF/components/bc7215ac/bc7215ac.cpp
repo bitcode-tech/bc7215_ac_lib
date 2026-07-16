@@ -174,6 +174,7 @@ bool BC7215AC::signal_captured()
 // One-sample and multi-sample paths call different C-library entry points.
 bool BC7215AC::init()
 {
+	uint8_t pkt0_rev;
     init_ok = false;
 
     // A single frame can be initialized directly.
@@ -196,9 +197,10 @@ bool BC7215AC::init()
                 = bc7215_ac_init(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&received_message_[0]));
         }
     }
-    else if (sample_count > 1)
+    else if ((sample_count > 1) && (sample_count <= 4))
     {
         // Multi-frame matching may require bit inversion correction first.
+		pkt0_rev = sample_status[0] & kErrStatusBit;
         if (!reverse_marked_samples_())
         {
             return false;
@@ -206,11 +208,11 @@ bool BC7215AC::init()
 
         if (use_fahrenheit_)
         {
-            init_ok = bc7215_ac_init2_f(sample_count, received_message_, 0);
+            init_ok = bc7215_ac_init2_f(sample_count | pkt0_rev, received_message_, 0);
         }
         else
         {
-            init_ok = bc7215_ac_init2(sample_count, received_message_, 0);
+            init_ok = bc7215_ac_init2(sample_count | pkt0_rev, received_message_, 0);
         }
     }
 
@@ -219,11 +221,11 @@ bool BC7215AC::init()
 
 // Initialize from previously saved packets, e.g. data restored from NVS flash.
 // The packets are converted into the same single-sample layout used after capture.
-bool BC7215AC::init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
+bool BC7215AC::init(uint8_t status, const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
 {
     sample_data[0] = data;
     sample_format[0] = format;
-    sample_status[0] = format.signature.inByte;
+    sample_status[0] = status;
     sample_count = 1;
 
     if (use_fahrenheit_)
@@ -355,6 +357,7 @@ const bc7215DataVarPkt_t* BC7215AC::off()
 // library compares against the current protocol format.
 bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 {
+	uint8_t pkt0_rev;
     if (!init_ok)
     {
         return false;
@@ -371,15 +374,20 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
             return false;
         }
     }
-    else if (sample_count > 1)
+    else if ((sample_count > 1) && (sample_count <= 4))
     {
         // For multi-frame captures, prepare the linked combined-message array.
+		pkt0_rev = sample_status[0] & kErrStatusBit;
         if (!reverse_marked_samples_())
         {
             return false;
         }
-        bc7215_ac_replace_base(sample_count, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+        bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
     }
+	else
+	{
+		return false;
+	}
 
     int8_t t = 0;
     int8_t m = 0;
@@ -416,6 +424,9 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 
 // Forward BC7215 BUSY status for callers that need to wait for TX/RX activity.
 bool BC7215AC::is_busy() const { return bc7215_.is_busy(); }
+
+// Current base status byte using by the AC protocol library.
+uint8_t BC7215AC::status_byte() const { return bc7215_ac_get_base_status(); }
 
 // Current base data packet selected by the AC protocol library.
 const bc7215DataVarPkt_t* BC7215AC::data_packet() const { return bc7215_ac_get_base_data(); }
@@ -457,13 +468,15 @@ uint16_t BC7215AC::data_packet_bytes_(const bc7215DataVarPkt_t* pkt)
 // Correct those payload bytes in-place before giving samples to the AC matcher.
 bool BC7215AC::reverse_marked_samples_()
 {
+	uint8_t pkt0_rev = sample_status[0] & kReverseStatusBit;
+
     for (uint8_t j = 0; j < sample_count && j < kMaxSamples; ++j)
     {
         if (sample_status[j] & kErrStatusBit)
         {
             return false;
         }
-        if ((sample_status[j] & kReverseStatusBit) == 0)
+        if ((j == 0) || ((sample_status[j] & kReverseStatusBit) == pkt0_rev))
         {
             continue;
         }

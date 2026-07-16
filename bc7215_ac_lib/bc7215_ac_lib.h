@@ -195,6 +195,7 @@ const bc7215FormatPkt_t* bc7215_ac_predefined_fmt(uint8_t index);
  */
 const char* bc7215_ac_predefined_name(uint8_t index);
 
+#ifndef _NO_DEPRECATED
 /**
  * @brief Check if this protocol needs extra data sample
  * @return An 8-bit number indicating which parameter needs extra sampling
@@ -222,6 +223,7 @@ bool bc7215_ac_save_2nd_base(uint8_t status, const bc7215CombinedMsg_t* message)
  * @note Use this function to access second format and data stored in library
  */
 bc7215CombinedMsg_t bc7215_ac_get_2nd_base(void);
+#endif	// _NO_DEPRECATED
 
 /**
  * @brief Replace the base IR data packet with alternative data packet
@@ -246,6 +248,13 @@ const bc7215FormatPkt_t* bc7215_ac_get_base_fmt(void);
  * @note This function returns the data packet that was used during library initialization
  */
 const bc7215DataVarPkt_t* bc7215_ac_get_base_data(void);
+
+/**
+ * @brief Get the status byte for base data packet used during initialization
+ * @return The status byte.
+ * @note This returned status can be used to store pairing information after successful initializtion
+ */
+uint8_t bc7215_ac_get_base_status(void);
 
 /**
  * @brief Initialize the BC7215 AC control library with multiple message configurations (Celsius)

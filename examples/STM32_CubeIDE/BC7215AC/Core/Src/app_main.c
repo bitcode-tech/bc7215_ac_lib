@@ -280,16 +280,38 @@ bool Check_Signal_Captured(void)
     return false;
 }
 
+bool check_pkts_polarity(void)
+{
+	uint8_t pkt0Rev;
+	pkt0Rev = sampleStatus[0] & 0x40;
+	for (int j = 0; j < sampleCount; j++)
+    {
+    	if (sampleStatus[j]&0x80)	// check error bit
+    	{
+    		return false;
+    	}
+        if ((j != 0) && ((sampleStatus[j] & 0x40) != pkt0Rev))        // if receiving status has "REV" bit set, reverse every byte of data
+        {
+            for (int i = 0; i < (sampleData[j].bitLen + 7) / 8; i++)
+            {
+                sampleData[j].data[i] = ~sampleData[j].data[i];
+            }
+            sampleStatus[j] = (sampleStatus[j]&0xbf) | pkt0Rev;
+        }
+    }
+	return true;
+}
+
 // 初始化（配对）,调用时应已取得采样数据
 bool Ac_Init(void)
 {
-    int i, j;
+	uint8_t pkt0Rev;
     acInitOK = false;
     if (sampleCount == 1)
     {
     	if (sampleStatus[0]&0x80)	// check error bit
     	{
-    		return acInitOK;
+    		return false;
     	}
     	if (acIsFahrenheit)
     	{
@@ -300,30 +322,20 @@ bool Ac_Init(void)
     		acInitOK = bc7215_ac_init(sampleStatus[0], (const bc7215DataVarPkt_t*)(&rcvdMessage[0]));
     	}
     }
-    else if (sampleCount > 1)
+    else if ((sampleCount > 1) && (sampleCount <= 4))
     {
-        for (j = 0; j < sampleCount; j++)
-        {
-        	if (sampleStatus[j]&0x80)	// check error bit
-        	{
-        		return acInitOK;
-        	}
-            if (sampleStatus[j] & 0x40)        // if receiving status has "REV" bit set, reverse every byte of data
-            {
-                for (i = 0; i < (sampleData[j].bitLen + 7) / 8; i++)
-                {
-                    sampleData[j].data[i] = ~sampleData[j].data[i];
-                }
-                sampleStatus[j] &= 0xbf;
-            }
-        }
+		pkt0Rev = sampleStatus[0] & 0x40;
+		if (!check_pkts_polarity())
+		{
+			return false;
+		}
     	if (acIsFahrenheit)
     	{
-    		acInitOK = bc7215_ac_init2_f(sampleCount, rcvdMessage, 0);
+    		acInitOK = bc7215_ac_init2_f(sampleCount | pkt0Rev, rcvdMessage, 0);
     	}
     	else
     	{
-    		acInitOK = bc7215_ac_init2(sampleCount, rcvdMessage, 0);
+    		acInitOK = bc7215_ac_init2(sampleCount | pkt0Rev, rcvdMessage, 0);
     	}
     }
     return acInitOK;
@@ -364,7 +376,7 @@ bool Ac_Init_Predef(uint8_t index)
 // 解析接收缓冲区中红外信号 (此函数须在成功采样后调用)
 bool Ac_Parse(int8_t* temp, int8_t* mode, int8_t* fan, int8_t* power)
 {
-    int i, j;
+	uint8_t pkt0Rev;
     if (sampleCount == 1)
     {
     	if (!(sampleStatus[0]&0x80))	// check error bit
@@ -376,25 +388,19 @@ bool Ac_Parse(int8_t* temp, int8_t* mode, int8_t* fan, int8_t* power)
     		return false;
     	}
     }
-    else if (sampleCount > 1)
+    else if ((sampleCount > 1) && (sampleCount <= 4))
     {
-        for (j = 0; j < sampleCount; j++)
-        {
-        	if (sampleStatus[j] & 0x80)		// check error bit
-        	{
-        		return false;
-        	}
-            if (sampleStatus[j] & 0x40)        // if receiving status has "REV" bit set, reverse every byte of data
-            {
-                for (i = 0; i < (sampleData[j].bitLen + 7) / 8; i++)
-                {
-                    sampleData[j].data[i] = ~sampleData[j].data[i];
-                }
-                sampleStatus[j] &= 0xbf;
-            }
-        }
-        bc7215_ac_replace_base(sampleCount, (const bc7215DataVarPkt_t*)rcvdMessage);
+		pkt0Rev = sampleStatus[0] & 0x40;
+		if (!check_pkts_polarity())
+		{
+			return false;
+		}
+        bc7215_ac_replace_base(sampleCount | pkt0Rev, (const bc7215DataVarPkt_t*)rcvdMessage);
     }
+	else
+	{
+		return false;
+	}
 	if (acIsFahrenheit)
 	{
 		return bc7215_ac_parse_f(temp, mode, fan, power);
@@ -815,11 +821,10 @@ void Job_Backup(void)
     case STEP1:
         /*
          * 此部分代码需用户根据具体系统添加，所需保存数据包括(假设已正确配对)：
+		 * bc7215_ac_get_base_status()所返回的状态字
          * bc7215_ac_get_base_data()所返回的数据包
          * bc7215_ac_get_base_fmt()所返回的格式包(如初始化操作已使用包含格式信息的数据的参数)
          * 调用bc7215_ac_find_next()的次数
-         * 如果为有按键需要额外采样的协议，还需要保存：
-         * bc7215_ac_get_2nd_base()所返回的复合格式combinedMsg_t所指向的数据包和格式包
          */
         printf("This part of code need to be implemented by user according to the system environment.\r\nPress Enter "
                "to continue...\r\n");
@@ -846,10 +851,8 @@ void Job_Restore(void)
     case STEP1:
         /*
          * 此部分代码需用户根据具体系统添加，需要读出Job_Backup()中所保存的全部数据，并按下面步骤初始化(配对)
-         * 1.使用基础格式包中的Format.signature.bits.sig 作为Status，用所保存的基础格式包和基础数据包
-         *   组成复合数据combinedMsg_t，调用bc7215_ac_init()完成初始化
+         * 1.使用所保存的状态字Status，及基础格式包和基础数据包所组成的复合数据combinedMsg_t，调用bc7215_ac_init()完成初始化
          * 2.执行与保存数据相同多次数的bc7215_ac_find_next()
-         * 3.如果保存数据中还有额外采样的格式和数据，使用bc7215_ac_save_2nd_base()将其加载到码库
          */
         printf("This part of code need to be implemented by user according to the system environment.\r\nPress Enter "
                "to continue...\r\n");
@@ -934,9 +937,9 @@ void Job_MainMenu(void)
                 if (acInitOK)
                 {
                     // 因为解析操作会替换基础数据包，故先备份下来，以便恢复
+                	backupStatus = bc7215_ac_get_base_status();
                     backupBaseData.bitLen = bc7215_ac_get_base_data()->bitLen;
                     memcpy(backupBaseData.data, bc7215_ac_get_base_data()->data, (backupBaseData.bitLen + 7) / 8);
-                    backupStatus = bc7215_ac_get_base_fmt()->signature.bits.sig;
                     mainState = IR_PARSING;
                     l2State = STEP1;
                 }

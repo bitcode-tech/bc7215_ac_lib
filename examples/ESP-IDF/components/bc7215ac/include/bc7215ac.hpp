@@ -91,7 +91,7 @@ public:
     // Initialize/pair AC protocol from captured samples or explicit packets.
     // init() uses the samples currently stored in sample_data/sample_format.
     bool init();
-    bool init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format);
+    bool init(uint8_t status, const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format);
     bool match_next();
 
     // Predefined built-in protocols. These are fallback protocol records bundled
@@ -113,6 +113,7 @@ public:
     // Status/accessors. data_packet()/format_packet() expose the current base
     // protocol data so it can be saved to NVS and restored later.
     bool                      is_busy() const;
+	uint8_t					  status_byte() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t*  format_packet() const;
 	bool					  replace_base(bc7215DataMaxPkt_t& dataPkt);

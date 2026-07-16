@@ -62,3 +62,9 @@ V7.2	2026-06-12	1. Integrate bc7215 driver library V4.3.
 					4. Now can have _NO_DEPRECATED compile option to remove deprecated code.
 					   for example: gcc -D _NO_DEPRECATED -c bc7215_ac_lib.c
 
+V8.0	2026-07-15	1. Added bc7215_ac_get_base_status() function
+					2. bc7215_ac_init2(), bc7215_ac_init2_f() and bc7215_ac_replace_base() can process REV bit in status parameter
+					3. More supported protocols.
+					4. Increased parsing accuracy.
+					5. Bug fixes
+					6. New example code applying library V8.0
