@@ -68,3 +68,7 @@ V8.0	2026-07-15	1. Added bc7215_ac_get_base_status() function
 					4. Increased parsing accuracy.
 					5. Bug fixes
 					6. New example code applying library V8.0
+
+V8.1	2026-08-06	1. Increased stability
+					2. Bug fixes
+					3. Improved ESP-IDF & Linux example code.

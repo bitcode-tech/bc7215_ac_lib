@@ -65,8 +65,11 @@ esp_err_t BC7215AC::begin()
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Default to transmit mode after hardware setup. Capture functions will
+    // Switch mode at begin to wake up BC7215 in case it's in sleep mode
+	// Default to transmit mode after hardware setup. Capture functions will
     // explicitly switch to RX mode when needed.
+	bc7215_.set_rx();
+    delay_ms_(kModeSwitchDelayMs);
     bc7215_.set_tx();
     started_ = true;
     return ESP_OK;
@@ -358,16 +361,30 @@ const bc7215DataVarPkt_t* BC7215AC::off()
 bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 {
 	uint8_t pkt0_rev;
+	uint8_t temp_status;
+	bc7215DataMaxPkt_t temp_pkt;
+	const bc7215DataVarPkt_t* base_pkt;
+	bool rep_result;
+
     if (!init_ok)
     {
         return false;
     }
 
+	// Backup base status & data
+	temp_status = bc7215_ac_get_base_status();
+	base_pkt = bc7215_ac_get_base_data();
+	temp_pkt.bitLen = base_pkt->bitLen;
+	for (int i = 0; i < (temp_pkt.bitLen+7)/8; i++)
+	{
+		temp_pkt.data[i] = base_pkt->data[i];
+	}
+
     if (sample_count == 1)
     {
         if (!(sample_status[0] & kErrStatusBit))
         {
-            bc7215_ac_replace_base(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[0]));
+            rep_result = bc7215_ac_replace_base(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[0]));
         }
         else
         {
@@ -382,7 +399,7 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
         {
             return false;
         }
-        bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+        rep_result = bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
     }
 	else
 	{
@@ -415,6 +432,12 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
         current_fan = f;
     }
 
+	// If replace base was not successful, restore prevoious base
+	if (!rep_result)
+	{
+		bc7215_ac_replace_base(temp_status, reinterpret_cast<const bc7215DataVarPkt_t*>(&temp_pkt));
+	}
+
     temp = static_cast<int>(t);
     mode = static_cast<int>(m);
     fan = static_cast<int>(f);
@@ -440,7 +463,7 @@ const bc7215FormatPkt_t* BC7215AC::format_packet() const { return bc7215_ac_get_
 bool BC7215AC::replace_base(bc7215DataMaxPkt_t& dataPkt)
 {
 	uint8_t status;
-	status = bc7215_ac_get_base_fmt()->signature.bits.sig;
+	status = bc7215_ac_get_base_status();
 	return bc7215_ac_replace_base(status, reinterpret_cast<const bc7215DataVarPkt_t*>(&dataPkt));
 }
 

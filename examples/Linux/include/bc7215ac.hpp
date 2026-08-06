@@ -60,6 +60,7 @@ public:
 	uint8_t status_byte() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t* format_packet() const;
+	bool  replace_base(bc7215DataMaxPkt_t& dataPkt);
     const char* lib_version() const;
 
     BC7215& driver() { return bc7215_; }
