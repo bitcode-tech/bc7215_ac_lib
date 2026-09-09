@@ -445,6 +445,47 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
     return result;
 }
 
+
+// Replace base with the most recently captured IR frame(s).
+// If replacement failed, will return false.
+bool BC7215AC::replace_base()
+{
+	uint8_t pkt0_rev;
+	bool rep_result;
+
+    if (!init_ok)
+    {
+        return false;
+    }
+
+    if (sample_count == 1)
+    {
+        if (!(sample_status[0] & kErrStatusBit))
+        {
+            rep_result = bc7215_ac_replace_base(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[0]));
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else if ((sample_count > 1) && (sample_count <= 4))
+    {
+        // For multi-frame captures, prepare the linked combined-message array.
+		pkt0_rev = sample_status[0] & kErrStatusBit;
+        if (!reverse_marked_samples_())
+        {
+            return false;
+        }
+        rep_result = bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+    }
+	else
+	{
+		return false;
+	}
+	return rep_result;
+}
+
 // Forward BC7215 BUSY status for callers that need to wait for TX/RX activity.
 bool BC7215AC::is_busy() const { return bc7215_.is_busy(); }
 

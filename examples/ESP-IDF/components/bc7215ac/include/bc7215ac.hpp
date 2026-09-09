@@ -110,6 +110,10 @@ public:
     // protocol base. The output values are converted to user-facing units.
     bool parse(int& temp, int& mode, int& fan, int& power);
 
+    // Use the last captured IR signal to replace the current data base
+    // Returns false if the replacement was not successful.
+    bool replace_base();
+
     // Status/accessors. data_packet()/format_packet() expose the current base
     // protocol data so it can be saved to NVS and restored later.
     bool                      is_busy() const;
