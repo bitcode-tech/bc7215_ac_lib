@@ -75,3 +75,5 @@ V8.1	2026-08-06	1. Increased stability
 
 V8.1.1	2026-09-09	1. Added more supported protocols.
 					2. Improved ESP-IDF example code.
+					
+V8.1.2	2026-10-13	1. Known AC protocol bug fixes.
