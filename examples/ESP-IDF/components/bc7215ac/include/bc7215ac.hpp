@@ -70,7 +70,8 @@ public:
     bool init_ok = false;
     // Captured sample buffers. Some AC protocols require more than one IR frame
     // for reliable identification, so up to kMaxSamples frames are stored.
-    uint8_t            sample_count = 0;
+    uint8_t 			fmtPktCnt = 0;
+    uint8_t 			datPktCnt = 0;
     uint8_t            sample_status[kMaxSamples] = {};
     bc7215DataMaxPkt_t sample_data[kMaxSamples] = {};
     bc7215FormatPkt_t  sample_format[kMaxSamples] = {};
@@ -116,7 +117,7 @@ public:
 
     // Status/accessors. data_packet()/format_packet() expose the current base
     // protocol data so it can be saved to NVS and restored later.
-    bool                      is_busy() const;
+    bool                      is_busy() ;
 	uint8_t					  status_byte() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t*  format_packet() const;
@@ -148,8 +149,8 @@ private:
     int8_t current_fan = 1;
     int8_t current_key = 3;
     bool   started_ = false;
-    bool   format_received_ = false;
     bool   use_fahrenheit_ = false;
+	bool	captureFmtPkt;
 
     // Time/delay helpers wrapped here to keep ESP-IDF calls out of public code.
     static uint64_t now_ms_();

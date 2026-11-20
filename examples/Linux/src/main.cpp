@@ -477,15 +477,23 @@ static void capture_job()
     case L2State::Step3:
         if (ac->signal_captured()) {
             ac->stop_capture();
-            if (ac->init()) {
-                std::printf("Received data: ");
-                data_pkt = ac->data_packet();
-                print_packet_payload(data_pkt);
-                std::printf("AC control library initialization using received data SUCCESS.\n");
-            } else {
-                std::printf("AC control library initialization FAILED.\n");
+            printf("Received %d packet(s): \r\n", ac->fmtPktCnt);
+            for (int i = 0; i < ac->fmtPktCnt; i++)
+            {
+                printf("Pkt %d -- status=0x%X, bitLen=0x%X, Data: ", i, ac->sample_status[i], ac->sample_data[i].bitLen);
+                print_data(&ac->sample_data[i].data, (ac->sample_data[i].bitLen + 7) / 8);
             }
-            l2_state = L2State::Step4;
+            if (ac->fmtPktCnt != 0) {
+           		if (ac->init()) {
+           		    std::printf("AC control library initialization using received data SUCCESS.\n");
+           		} else {
+           		    std::printf("AC control library initialization FAILED.\n");
+           		}
+            	l2_state = L2State::Step4;
+			} else {
+            	printf("BC7215A not in complex mode, trying again...\r\n");
+            	l2_state = L2State::Step1;
+            }
         }
         break;
     case L2State::Step4:

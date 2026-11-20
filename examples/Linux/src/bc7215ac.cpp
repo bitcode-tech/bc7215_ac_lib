@@ -49,7 +49,7 @@ bool BC7215AC::begin()
 
     init_ok = false;
     use_fahrenheit_ = false;
-    format_received_ = false;
+	captureFmtPkt = true;
     timer_start_ms_ = 0;
 
     if (!bc7215_.started()) {
@@ -109,14 +109,22 @@ void BC7215AC::start_capture(uint8_t rx_mode)
 {
     // Each capture begins from a clean software state. The BC7215 C driver
     // buffers are cleared after the chip has been switched to RX mode.
-    format_received_ = false;
 
     bc7215_.set_rx();
     delay_ms_(kModeSwitchDelayMs);
     bc7215_.set_rx_mode(rx_mode);
+   	if (rx_mode & 0x01)		// if rx mode is complex mode
+   	{
+   		captureFmtPkt = true;
+   	}
+   	else
+   	{
+   		captureFmtPkt = false;
+   	}
     bc7215_.clr_data();
     bc7215_.clr_format();
-	sample_count = 0;
+	fmtPktCnt = 0;
+	datPktCnt = 0;
     timer_start_ms_ = now_ms_();
 }
 
@@ -124,7 +132,6 @@ void BC7215AC::start_capture(uint8_t rx_mode)
 // Stop capture and return the BC7215A to TX/encoder mode.
 void BC7215AC::stop_capture()
 {
-    format_received_ = false;
     bc7215_.set_tx();
     delay_ms_(kModeSwitchDelayMs);
 }
@@ -133,28 +140,38 @@ void BC7215AC::stop_capture()
 // Poll for received IR data and decide when the capture has become idle.
 bool BC7215AC::signal_captured()
 {
+    if (bc7215_.data_ready()) {
+        if (datPktCnt < kMaxSamples) {
+			if (captureFmtPkt) {
+            	sample_status[fmtPktCnt] = bc7215_.get_data(sample_data[fmtPktCnt]);
+			} else {
+            	sample_status[datPktCnt] = bc7215_.get_data(sample_data[datPktCnt]);
+			}
+			datPktCnt++;
+            if (bc7215_.format_ready()) {
+				if (captureFmtPkt) {
+                	bc7215_.get_format(sample_format[fmtPktCnt]);
+				} else {
+                	bc7215_.get_format(sample_format[datPktCnt]);
+				}
+				fmtPktCnt++;
+				// As data packet was sent in before the format packet, data_ready() may return 'true' for twice
+				// when BC7215 is working in complex mode. 1st time when data packet was just arrived and 2nd time
+				// when the format packet was received. So here we synchronize the dayPktCnt with the fmtPktCnt.
+				datPktCnt = fmtPktCnt;
+            }
+        }
+        timer_start_ms_ = now_ms_();
+    }
     if (bc7215_.is_busy()) {
         // While the chip is busy receiving or processing IR data, keep extending
         // the idle timer. Capture ends only after data has been received and the
         // bus stays idle for kCaptureIdleMs.
         timer_start_ms_ = now_ms_();
-    } else {
-        if (bc7215_.data_ready()) {
-            if (sample_count < kMaxSamples) {
-                sample_status[sample_count] = bc7215_.get_data(sample_data[sample_count]);
-                if (bc7215_.format_ready()) {
-                    bc7215_.get_format(sample_format[sample_count]);
-                    format_received_ = true;
-                }
-                ++sample_count;
-            }
-            timer_start_ms_ = now_ms_();
-        }
-    }
-
+	}
     // Once at least one segment has been received and no more bytes arrive for
     // the idle interval, treat the whole IR command as complete.
-    if (sample_count > 0 && (now_ms_() - timer_start_ms_) > kCaptureIdleMs) {
+    if (datPktCnt > 0 && (now_ms_() - timer_start_ms_) > kCaptureIdleMs) {
         return true;
     }
     return false;
@@ -167,7 +184,7 @@ bool BC7215AC::init()
 	uint8_t pkt0_rev;
     init_ok = false;
 
-    if (sample_count == 1) {
+    if (fmtPktCnt == 1) {
         // Single-segment commands can be passed to the C library directly.
         if (sample_status[0] & kErrStatusBit) {
             return false;
@@ -179,7 +196,7 @@ bool BC7215AC::init()
             init_ok = bc7215_ac_init(sample_status[0],
                                      reinterpret_cast<const bc7215DataVarPkt_t*>(&received_message_[0]));
         }
-    } else if ((sample_count > 1) && (sample_count <= 4)) {
+    } else if ((fmtPktCnt > 1) && (fmtPktCnt <= kMaxSamples)) {
         // Multi-segment AC commands are represented by the combined-message
         // array stored in received_message_.
 		pkt0_rev = sample_status[0]&kReverseStatusBit;
@@ -187,9 +204,9 @@ bool BC7215AC::init()
             return false;
         }
         if (use_fahrenheit_) {
-            init_ok = bc7215_ac_init2_f(sample_count | pkt0_rev, received_message_, 0);
+            init_ok = bc7215_ac_init2_f(fmtPktCnt | pkt0_rev, received_message_, 0);
         } else {
-            init_ok = bc7215_ac_init2(sample_count | pkt0_rev, received_message_, 0);
+            init_ok = bc7215_ac_init2(fmtPktCnt | pkt0_rev, received_message_, 0);
         }
     }
 
@@ -203,7 +220,7 @@ bool BC7215AC::init(uint8_t status, const bc7215DataMaxPkt_t& data, const bc7215
     sample_data[0] = data;
     sample_format[0] = format;
     sample_status[0] = status;
-    sample_count = 1;
+    fmtPktCnt = 1;
 
     if (use_fahrenheit_) {
         init_ok = bc7215_ac_init_f(sample_status[0],
@@ -323,7 +340,8 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 	const bc7215DataVarPkt_t* base_pkt;
 	bool rep_result;
 
-    if (!init_ok) {
+    if (!init_ok)
+    {
         return false;
     }
 
@@ -336,20 +354,29 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
 		temp_pkt.data[i] = base_pkt->data[i];
 	}
 
-    if (sample_count == 1) {
-        if (!(sample_status[0] & kErrStatusBit)) {
+    if (datPktCnt == 1)
+    {
+        if (!(sample_status[0] & kErrStatusBit))
+        {
             rep_result = bc7215_ac_replace_base(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[0]));
-        } else {
+        }
+        else
+        {
             return false;
         }
-    } else if ((sample_count > 1) && (sample_count <= 4)) {
-		pkt0_rev = sample_status[0]&kReverseStatusBit;
-        if (!reverse_marked_samples_()) {
-            return false;
-        }
-        rep_result = bc7215_ac_replace_base(sample_count | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
     }
-	else {
+    else if ((datPktCnt > 1) && (datPktCnt <= kMaxSamples))
+    {
+        // For multi-frame captures, prepare the linked combined-message array.
+		pkt0_rev = sample_status[0] & kErrStatusBit;
+        if (!reverse_marked_samples_())
+        {
+            return false;
+        }
+        rep_result = bc7215_ac_replace_base(datPktCnt | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+    }
+	else
+	{
 		return false;
 	}
 
@@ -357,19 +384,23 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
     int8_t m = 0;
     int8_t f = 0;
     int8_t p = 0;
-    bool result = false;
+    bool   result = false;
 
-    if (use_fahrenheit_) {
+    // The C parser returns temperature as an offset; convert it back to the
+    // user-facing scale before returning.
+    if (use_fahrenheit_)
+    {
         result = bc7215_ac_parse_f(&t, &m, &f, &p);
         t += 60;
-    } else {
+    }
+    else
+    {
         result = bc7215_ac_parse(&t, &m, &f, &p);
         t += 16;
     }
-
-    if (result) {
-        // Keep the cached AC state synchronized with successfully decoded
-        // remote-control commands.
+    // Keep the last known state synchronized with parsed remote-control input.
+    if (result)
+    {
         current_temp = t;
         current_mode = m;
         current_fan = f;
@@ -388,9 +419,49 @@ bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
     return result;
 }
 
+// Replace base with the most recently captured IR frame(s).
+// If replacement failed, will return false.
+bool BC7215AC::replace_base()
+{
+	uint8_t pkt0_rev;
+	bool rep_result;
+
+    if (!init_ok)
+    {
+        return false;
+    }
+
+    if (datPktCnt == 1)
+    {
+        if (!(sample_status[0] & kErrStatusBit))
+        {
+            rep_result = bc7215_ac_replace_base(sample_status[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sample_data[0]));
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else if ((datPktCnt > 1) && (datPktCnt <= kMaxSamples))
+    {
+        // For multi-frame captures, prepare the linked combined-message array.
+		pkt0_rev = sample_status[0] & kErrStatusBit;
+        if (!reverse_marked_samples_())
+        {
+            return false;
+        }
+        rep_result = bc7215_ac_replace_base(datPktCnt | pkt0_rev, reinterpret_cast<const bc7215DataVarPkt_t*>(received_message_));
+    }
+	else
+	{
+		return false;
+	}
+	return rep_result;
+}
+
 
 // Report whether the BC7215A is still busy, usually during IR transmission.
-bool BC7215AC::is_busy() const
+bool BC7215AC::is_busy()
 {
     return bc7215_.is_busy();
 }
@@ -463,25 +534,36 @@ uint16_t BC7215AC::data_packet_bytes_(const bc7215DataVarPkt_t* pkt)
 // Check error and apply bit inversion to samples have different BC7215 reverse-data status bit than the 1st packet.
 bool BC7215AC::reverse_marked_samples_()
 {
- 	if (sample_status[0] & kErrStatusBit)				// check error bit in first packet
+	uint8_t pkt0_rev = sample_status[0] & kReverseStatusBit;
+	uint8_t pkt_cnt;
+
+	if (captureFmtPkt) 
 	{
-		return false;
+		pkt_cnt = fmtPktCnt;
+	} 
+	else 
+	{
+		pkt_cnt = datPktCnt;
 	}
-	uint8_t Pkt0Rev = sample_status[0]&kReverseStatusBit;	// get REV bit in first packet
-    for (uint8_t j = 1; j < sample_count && j < kMaxSamples; ++j) {
-        if (sample_status[j] & kErrStatusBit) {
+
+    for (uint8_t j = 0; j < pkt_cnt && j < kMaxSamples; ++j)
+    {
+        if (sample_status[j] & kErrStatusBit)
+        {
             return false;
         }
-        if ((sample_status[j] & kReverseStatusBit) == Pkt0Rev) {
+        if ((j == 0) || ((sample_status[j] & kReverseStatusBit) == pkt0_rev))
+        {
             continue;
         }
 
         const uint16_t bytes = static_cast<uint16_t>((sample_data[j].bitLen + 7) / 8);
         const uint16_t safe_bytes = std::min<uint16_t>(bytes, BC7215_MAX_RX_DATA_SIZE);
-        for (uint16_t i = 0; i < safe_bytes; ++i) {
+        for (uint16_t i = 0; i < safe_bytes; ++i)
+        {
             sample_data[j].data[i] = static_cast<uint8_t>(~sample_data[j].data[i]);
         }
-        sample_status[j] = static_cast<uint8_t>(sample_status[j] & ~kReverseStatusBit) | Pkt0Rev;
+        sample_status[j] = static_cast<uint8_t>(sample_status[j] & ~kReverseStatusBit);
     }
     return true;
 }
@@ -507,7 +589,7 @@ bool BC7215AC::copy_predefined_data_(uint8_t index)
     std::memcpy(sample_data[0].data, src_data->data, copy_bytes);
     sample_format[0] = *src_format;
     sample_status[0] = sample_format[0].signature.bits.sig;
-    sample_count = 1;
+    fmtPktCnt = 1;
     return true;
 }
 

@@ -54,9 +54,10 @@ const bc7215CombinedMsg_t rcvdMessage[4] = {
 
 bc7215DataMaxPkt_t  backupBaseData;
 uint8_t             backupStatus;
-uint8_t             sampleCount = 0;
+uint8_t             fmtPktCnt = 0;
+uint8_t				datPktCnt = 0;
 bool                acInitOK = false;
-bool				formatReceived;
+bool				captureFmtPkt;
 uint32_t            timerStartTime = 0;
 
 // 字符串常量
@@ -227,11 +228,19 @@ void Print_Data(const void* data, uint8_t len)
 // 开始采样
 void Ac_StartCapture(uint8_t rx_mode)
 {
-    sampleCount = 0;
-    formatReceived = false;
+    fmtPktCnt = 0;
+    datPktCnt = 0;
     bc7215_set_rx();
     HAL_Delay(50);
    	bc7215_set_rx_mode(rx_mode);
+   	if (rx_mode & 0x01)		// if rx mode is complex mode
+   	{
+   		captureFmtPkt = true;
+   	}
+   	else
+   	{
+   		captureFmtPkt = false;
+   	}
     bc7215_clr_data();
     bc7215_clr_format();
 }
@@ -248,43 +257,56 @@ void Ac_StopCapture(void)
 // 检查是否已经完成红外信号采集
 bool Check_Signal_Captured(void)
 {
-    if (bc7215_is_busy())
-    {        // 如果BC7215A处于忙状态，更新计时器后返回
-        timerStartTime = HAL_GetTick();
-    }
-    else
-    {
-    	if (bc7215_data_ready())
-    	{
-    		if (sampleCount < 4)
-    		{
-				sampleStatus[sampleCount] = bc7215_get_data((bc7215DataVarPkt_t*)&sampleData[sampleCount]);
-				if (bc7215_format_ready())
+	if (bc7215_data_ready())
+	{
+		if (datPktCnt < 4)
+		{
+			if (captureFmtPkt)
+			{
+				sampleStatus[fmtPktCnt] = bc7215_get_data((bc7215DataVarPkt_t*)&sampleData[fmtPktCnt]);
+			}
+			else
+			{
+				sampleStatus[datPktCnt] = bc7215_get_data((bc7215DataVarPkt_t*)&sampleData[datPktCnt]);
+			}
+			datPktCnt++;
+			if (bc7215_format_ready())
+			{
+				if (captureFmtPkt)
 				{
-					formatReceived = true;
-					bc7215_get_format(&sampleFormat[sampleCount]);
+					bc7215_get_format(&sampleFormat[fmtPktCnt]);
 				}
-				sampleCount++;
-    		}
-            timerStartTime = HAL_GetTick();
-    	}
+				else
+				{
+					bc7215_get_format(&sampleFormat[datPktCnt]);
+				}
+				fmtPktCnt++;
+				datPktCnt = fmtPktCnt;
+			}
+		}
+		timerStartTime = HAL_GetTick();
+	}
+	if (bc7215_is_busy())
+	{        // 如果BC7215A处于忙状态，更新计时器后返回
+		timerStartTime = HAL_GetTick();
+	}
 
-        if (sampleCount > 0)
-        {        // 如果已经收到了采样数据，有200ms空闲后结束采样
-            if (HAL_GetTick() - timerStartTime > 200)
-            {
-                return true;        // 捕获完成
-            }
-        }
-    }
+	if (datPktCnt > 0)	// check data packet for exit in case the BC7215 is in simple mode and only data packet is available
+	{        // 如果已经收到了采样数据，有200ms空闲后结束采样
+		if (HAL_GetTick() - timerStartTime > 200)
+		{
+			return true;        // 捕获完成
+		}
+	}
     return false;
 }
+
 
 bool check_pkts_polarity(void)
 {
 	uint8_t pkt0Rev;
 	pkt0Rev = sampleStatus[0] & 0x40;
-	for (int j = 0; j < sampleCount; j++)
+	for (int j = 0; j < fmtPktCnt; j++)
     {
     	if (sampleStatus[j]&0x80)	// check error bit
     	{
@@ -307,7 +329,7 @@ bool Ac_Init(void)
 {
 	uint8_t pkt0Rev;
     acInitOK = false;
-    if (sampleCount == 1)
+    if (fmtPktCnt == 1)
     {
     	if (sampleStatus[0]&0x80)	// check error bit
     	{
@@ -322,7 +344,7 @@ bool Ac_Init(void)
     		acInitOK = bc7215_ac_init(sampleStatus[0], (const bc7215DataVarPkt_t*)(&rcvdMessage[0]));
     	}
     }
-    else if ((sampleCount > 1) && (sampleCount <= 4))
+    else if ((fmtPktCnt > 1) && (fmtPktCnt <= 4))
     {
 		pkt0Rev = sampleStatus[0] & 0x40;
 		if (!check_pkts_polarity())
@@ -331,11 +353,11 @@ bool Ac_Init(void)
 		}
     	if (acIsFahrenheit)
     	{
-    		acInitOK = bc7215_ac_init2_f(sampleCount | pkt0Rev, rcvdMessage, 0);
+    		acInitOK = bc7215_ac_init2_f(fmtPktCnt | pkt0Rev, rcvdMessage, 0);
     	}
     	else
     	{
-    		acInitOK = bc7215_ac_init2(sampleCount | pkt0Rev, rcvdMessage, 0);
+    		acInitOK = bc7215_ac_init2(fmtPktCnt | pkt0Rev, rcvdMessage, 0);
     	}
     }
     return acInitOK;
@@ -377,7 +399,7 @@ bool Ac_Init_Predef(uint8_t index)
 bool Ac_Parse(int8_t* temp, int8_t* mode, int8_t* fan, int8_t* power)
 {
 	uint8_t pkt0Rev;
-    if (sampleCount == 1)
+    if (datPktCnt == 1)
     {
     	if (!(sampleStatus[0]&0x80))	// check error bit
     	{
@@ -388,14 +410,14 @@ bool Ac_Parse(int8_t* temp, int8_t* mode, int8_t* fan, int8_t* power)
     		return false;
     	}
     }
-    else if ((sampleCount > 1) && (sampleCount <= 4))
+    else if ((datPktCnt > 1) && (datPktCnt <= 4))
     {
 		pkt0Rev = sampleStatus[0] & 0x40;
 		if (!check_pkts_polarity())
 		{
 			return false;
 		}
-        bc7215_ac_replace_base(sampleCount | pkt0Rev, (const bc7215DataVarPkt_t*)rcvdMessage);
+        bc7215_ac_replace_base(datPktCnt | pkt0Rev, (const bc7215DataVarPkt_t*)rcvdMessage);
     }
 	else
 	{
@@ -461,16 +483,16 @@ void Job_Capture(void)
         }
         break;
     case STEP3:
-        if (Check_Signal_Captured())
+        if (Check_Signal_Captured())	// Check if complete (Data+Format) packets have been received
         {        // 等待采样结束
             Ac_StopCapture();
-            printf("Received %d data packet(s): \r\n", sampleCount);
-            for (i = 0; i < sampleCount; i++)
+            printf("Received %d packet(s): \r\n", fmtPktCnt);
+            for (i = 0; i < fmtPktCnt; i++)
             {
                 printf("Pkt %d -- status=0x%X, bitLen=0x%X, Data: ", i, sampleStatus[i], sampleData[i].bitLen);
                 Print_Data(&sampleData[i].data, (sampleData[i].bitLen + 7) / 8);
             }
-            if (formatReceived)
+            if (fmtPktCnt != 0)
             {
 				if (Ac_Init())        // Try to initialize
 				{

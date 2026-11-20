@@ -11,7 +11,7 @@ AR := $(CROSS_COMPILE)ar
 TARGET ?= bc7215_ac_demo
 BUILD_DIR ?= build
 
-CPPFLAGS += -Iinclude -I$(CORE)
+CPPFLAGS += -Iinclude -I$(CORE) -MMD -MP
 CFLAGS += -std=c99 -Wall -Wextra -O2
 CXXFLAGS += -std=c++11 -Wall -Wextra -O2
 LDFLAGS += -pthread
@@ -48,5 +48,8 @@ $(BUILD_DIR)/src/%.o: src/%.cpp
 
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
+
+DEPS := $(OBJS:.o=.d)
+-include $(DEPS)
 
 .PHONY: all clean

@@ -4,7 +4,7 @@
  * This file replaces the ESP-IDF UART/GPIO/FreeRTOS layer with a POSIX/Linux
  * implementation. The original BC7215 C driver still provides the protocol
  * logic; this wrapper supplies serial I/O, DTR-based MOD control, CTS hardware
- * flow control, a polling RX thread, and pthread mutex callbacks.
+ * flow control, and a synchronous RX polling mechanism.
  */
 #include "bc7215.hpp"
 
@@ -36,15 +36,14 @@
 #if USE_UART_INTERRUPT != 0
 # error "Linux BC7215 port requires USE_UART_INTERRUPT to be 0"
 #endif
-#if PROCESS_IN_DIFFERENT_THREAD != 1
-# error "Linux BC7215 port requires PROCESS_IN_DIFFERENT_THREAD to be 1"
+#if PROCESS_IN_DIFFERENT_THREAD != 0
+# error "Linux BC7215 port requires PROCESS_IN_DIFFERENT_THREAD to be 0"
 #endif
 #ifndef CRTSCTS
 # error "This target does not expose CRTSCTS hardware flow-control support"
 #endif
 
 namespace {
-
 
 // Configure termios to raw mode without relying only on cfmakeraw availability.
 static void make_raw_termios(termios& tio)
@@ -64,7 +63,6 @@ static void make_raw_termios(termios& tio)
 
 namespace bc7215 {
 
-
 // The original C library stores callbacks globally, so only one active wrapper instance is supported.
 BC7215* BC7215::active_ = nullptr;
 
@@ -77,7 +75,7 @@ BC7215::BC7215(const char* device_path, bool mod_reverse)
 }
 
 
-// Ensure the serial port and RX thread are released if the object is destroyed.
+// Ensure the serial port is released if the object is destroyed.
 BC7215::~BC7215()
 {
     end();
@@ -100,8 +98,8 @@ void BC7215::set_error_(const std::string& msg)
 }
 
 
-// Open/configure the serial port, register C-library callbacks, and start the RX thread.
-bool BC7215::begin(uint32_t rx_poll_ms)
+// Open/configure the serial port and register C-library callbacks.
+bool BC7215::begin()
 {
     if (started_) {
         return true;
@@ -109,19 +107,9 @@ bool BC7215::begin(uint32_t rx_poll_ms)
 
     if (active_ != nullptr && active_ != this) {
         // Callback functions in the C library are global, not per object.
-        // Supporting multiple simultaneous instances would require an extra
-        // dispatcher layer in the C library itself.
         set_error_("bc7215_lib uses global callbacks; only one active BC7215 instance is supported");
         return false;
     }
-
-    rx_poll_ms_ = (rx_poll_ms == 0) ? 10 : rx_poll_ms;
-
-    if (pthread_mutex_init(&mutex_, nullptr) != 0) {
-        set_error_("pthread_mutex_init failed");
-        return false;
-    }
-    mutex_initialized_ = true;
 
     if (!open_serial_()) {
         end();
@@ -142,45 +130,20 @@ bool BC7215::begin(uint32_t rx_poll_ms)
     bc7215_config_mod_set_high_funct(&BC7215::mod_set_high_cb_);
     bc7215_config_mod_set_low_funct(&BC7215::mod_set_low_cb_);
     bc7215_config_read_mod_funct(&BC7215::read_mod_cb_);
-    bc7215_config_mutex_lock_funct(&BC7215::mutex_lock_cb_);
-    bc7215_config_mutex_unlock_funct(&BC7215::mutex_unlock_cb_);
-
-    // The ESP-IDF version processes RX data in a FreeRTOS task. The Linux port
-    // uses an equivalent POSIX thread that polls the tty and feeds the C decoder.
-    rx_thread_running_ = true;
-    if (pthread_create(&rx_thread_, nullptr, &BC7215::rx_thread_trampoline_, this) != 0) {
-        set_error_("pthread_create failed");
-        rx_thread_running_ = false;
-        end();
-        return false;
-    }
-    rx_thread_created_ = true;
 
     started_ = true;
     return true;
 }
 
 
-// Stop the RX thread, close the serial port, and unregister this active instance.
+// Close the serial port and unregister this active instance.
 void BC7215::end()
 {
-    rx_thread_running_ = false;
-
-    if (rx_thread_created_) {
-        pthread_join(rx_thread_, nullptr);
-        rx_thread_created_ = false;
-    }
-
     if (serial_fd_ >= 0) {
         set_dtr_(false);
         tcflush(serial_fd_, TCIOFLUSH);
         close(serial_fd_);
         serial_fd_ = -1;
-    }
-
-    if (mutex_initialized_) {
-        pthread_mutex_destroy(&mutex_);
-        mutex_initialized_ = false;
     }
 
     if (active_ == this) {
@@ -306,53 +269,42 @@ bool BC7215::write_byte_(uint8_t data)
 }
 
 
-// pthread entry point that forwards execution to the C++ member function.
-void* BC7215::rx_thread_trampoline_(void* arg)
+// Synchronously poll the serial buffer and feed bytes into the BC7215 C decoder.
+// Returns immediately if an IR data packet or format packet completes.
+void BC7215::poll_rx()
 {
-    static_cast<BC7215*>(arg)->rx_thread_loop_();
-    return nullptr;
-}
+    if (!started_ || serial_fd_ < 0) {
+        return;
+    }
 
+    uint8_t rx_byte;
+    while (true) {
+        // read() is non-blocking due to O_NONBLOCK
+        const ssize_t n = read(serial_fd_, &rx_byte, 1);
+        
+        if (n == 1) {
+            bc7215_process_uart_data(rx_byte);
 
-// Poll and read the serial port, then feed each byte to the BC7215 C decoder.
-void BC7215::rx_thread_loop_()
-{
-    uint8_t rx_buf[kRxReadChunkSize];
-
-    while (rx_thread_running_) {
-        pollfd pfd {};
-        pfd.fd = serial_fd_;
-        pfd.events = POLLIN;
-
-        const int ret = poll(&pfd, 1, static_cast<int>(rx_poll_ms_));
-        if (ret <= 0) {
-            continue;
-        }
-
-        if ((pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
-            continue;
-        }
-
-        if ((pfd.revents & POLLIN) == 0) {
-            continue;
-        }
-
-        // Drain all currently available bytes. read() is nonblocking, so the
-        // inner loop exits when the tty buffer becomes empty.
-        while (rx_thread_running_) {
-            const ssize_t n = read(serial_fd_, rx_buf, sizeof(rx_buf));
-            if (n > 0) {
-                for (ssize_t i = 0; i < n; ++i) {
-                    bc7215_process_uart_data(rx_buf[i]);
-                }
-                continue;
+            bool ready = false;
+#if ENABLE_RECEIVING == 1
+            if (bc7215_data_ready()) {
+                ready = true;
             }
-            if (n < 0 && errno == EINTR) {
-                continue;
+# if ENABLE_FORMAT == 1
+            if (bc7215_format_ready()) {
+                ready = true;
             }
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                break;
+# endif
+#endif
+            if (ready) {
+                // Return immediately. Any remaining bytes stay in the OS tty buffer
+                // and will be read during the next call to poll_rx().
+                return;
             }
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else {
+            // n <= 0 (EAGAIN, EWOULDBLOCK, etc.): The buffer is currently empty.
             break;
         }
     }
@@ -388,23 +340,26 @@ void BC7215::set_rx_mode(uint8_t mode)
 
 
 // Query the BC7215A BUSY state through the C driver.
-bool BC7215::is_busy() const
+bool BC7215::is_busy()
 {
+	poll_rx();
     return bc7215_is_busy() != 0;
 }
 
 
 // Query whether the last BC7215 command has completed.
-bool BC7215::cmd_completed() const
+bool BC7215::cmd_completed()
 {
+	poll_rx();
     return bc7215_cmd_completed() != 0;
 }
 
 #if ENABLE_RECEIVING == 1
 
 // Query whether a received IR data packet is available.
-bool BC7215::data_ready() const
+bool BC7215::data_ready() 
 {
+	poll_rx();
     return bc7215_data_ready() != 0;
 }
 
@@ -460,8 +415,9 @@ uint16_t BC7215::get_raw(void* addr, uint16_t size)
 # if ENABLE_FORMAT == 1
 
 // Query whether a received format packet is available.
-bool BC7215::format_ready() const
+bool BC7215::format_ready()
 {
+	poll_rx();
     return bc7215_format_ready() != 0;
 }
 
@@ -583,24 +539,6 @@ uint8_t BC7215::read_mod_cb_()
         active_->read_dtr_(value);
     }
     return value;
-}
-
-
-// C-library callback: lock the pthread mutex around shared driver state.
-void BC7215::mutex_lock_cb_()
-{
-    if (active_ != nullptr && active_->mutex_initialized_) {
-        pthread_mutex_lock(&active_->mutex_);
-    }
-}
-
-
-// C-library callback: unlock the pthread mutex around shared driver state.
-void BC7215::mutex_unlock_cb_()
-{
-    if (active_ != nullptr && active_->mutex_initialized_) {
-        pthread_mutex_unlock(&active_->mutex_);
-    }
 }
 
 } // namespace bc7215

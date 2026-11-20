@@ -9,7 +9,7 @@
 
 #define TX_HW_FLOW_CONTROL          1
 #define USE_UART_INTERRUPT          0
-#define PROCESS_IN_DIFFERENT_THREAD 1
+#define PROCESS_IN_DIFFERENT_THREAD 0
 
 #define ENABLE_RECEIVING            1
 #if ENABLE_RECEIVING == 1

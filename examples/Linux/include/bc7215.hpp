@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <pthread.h>
 #include <string>
 
 extern "C" {
@@ -32,8 +31,9 @@ public:
     BC7215(const BC7215&) = delete;
     BC7215& operator=(const BC7215&) = delete;
 
-    bool begin(uint32_t rx_poll_ms = 10);
+    bool begin();
     void end();
+    
 
     bool started() const { return started_; }
     const char* last_error() const { return last_error_.c_str(); }
@@ -43,11 +43,11 @@ public:
     void shutdown();
     void set_rx_mode(uint8_t mode);
 
-    bool is_busy() const;
-    bool cmd_completed() const;
+    bool is_busy();
+    bool cmd_completed();
 
 #if ENABLE_RECEIVING == 1
-    bool data_ready() const;
+    bool data_ready();
     void clr_data();
     uint16_t get_len() const;
     uint16_t data_packet_size() const;
@@ -55,7 +55,7 @@ public:
     uint8_t get_data(bc7215DataMaxPkt_t& target);
     uint16_t get_raw(void* addr, uint16_t size);
 # if ENABLE_FORMAT == 1
-    bool format_ready() const;
+    bool format_ready();
     void clr_format();
     uint8_t get_format(bc7215FormatPkt_t* target);
     uint8_t get_format(bc7215FormatPkt_t& target);
@@ -74,23 +74,13 @@ public:
     uint8_t crc8(const uint8_t* data, uint16_t len) const;
 
 private:
-    static constexpr size_t kRxReadChunkSize = 64;
-
     static BC7215* active_;
 
     std::string device_path_;
     bool mod_reverse_ = false;
     int serial_fd_ = -1;
 
-    pthread_mutex_t mutex_;
-    bool mutex_initialized_ = false;
-
-    pthread_t rx_thread_;
-    bool rx_thread_created_ = false;
-    volatile bool rx_thread_running_ = false;
-
     bool started_ = false;
-    uint32_t rx_poll_ms_ = 10;
     std::string last_error_;
 
     void set_error_(const char* prefix);
@@ -101,16 +91,13 @@ private:
     bool set_dtr_(bool logical_high);
     bool read_dtr_(uint8_t& logical_high) const;
     bool write_byte_(uint8_t data);
-
-    static void* rx_thread_trampoline_(void* arg);
-    void rx_thread_loop_();
+    // 主动轮询串口，若有数据则逐字节送入解析器；一旦解析出完整数据包即返回，未读字节保留在底层缓冲
+    void poll_rx();
 
     static void uart_send_byte_cb_(uint8_t data);
     static void mod_set_high_cb_();
     static void mod_set_low_cb_();
     static uint8_t read_mod_cb_();
-    static void mutex_lock_cb_();
-    static void mutex_unlock_cb_();
 };
 
 } // namespace bc7215

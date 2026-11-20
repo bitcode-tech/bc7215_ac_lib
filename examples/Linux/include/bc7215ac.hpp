@@ -29,7 +29,8 @@ public:
     const char* last_error() const { return bc7215_.last_error(); }
 
     bool init_ok = false;
-    uint8_t sample_count = 0;
+    uint8_t fmtPktCnt = 0;
+    uint8_t datPktCnt = 0;
     uint8_t sample_status[kMaxSamples] = {};
     bc7215DataMaxPkt_t sample_data[kMaxSamples] = {};
     bc7215FormatPkt_t sample_format[kMaxSamples] = {};
@@ -54,9 +55,15 @@ public:
     const bc7215DataVarPkt_t* on();
     const bc7215DataVarPkt_t* off();
 
+    // Parse the last captured IR signal using the currently initialized AC
+    // protocol base. The output values are converted to user-facing units.
     bool parse(int& temp, int& mode, int& fan, int& power);
+    // Use the last captured IR signal to replace the current data base
+    // Returns false if the replacement was not successful.
+    bool replace_base();
 
-    bool is_busy() const;
+
+    bool is_busy();
 	uint8_t status_byte() const;
     const bc7215DataVarPkt_t* data_packet() const;
     const bc7215FormatPkt_t* format_packet() const;
@@ -83,8 +90,8 @@ private:
     int8_t current_key = 3;
 
     bool started_ = false;
-    bool format_received_ = false;
     bool use_fahrenheit_ = false;
+	bool captureFmtPkt;
 
     static uint64_t now_ms_();
     static void delay_ms_(uint32_t ms);

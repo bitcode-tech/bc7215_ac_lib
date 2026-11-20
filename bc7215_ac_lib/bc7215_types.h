@@ -27,20 +27,11 @@
 #include "bc7215_lib_config.h"
 
 /* Conditionally include stdint.h or define uint8_t and uint16_t for C89 compatibility */
-#if defined(__cplusplus) && __cplusplus >= 201103L
+#if defined(__cplusplus) && __cplusplus >= 201103L && !defined(ARDUINO)
     #include <cstdint>
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
-    #include <stdint.h>
 #else
-    #ifndef UINT8_T
-    #define UINT8_T
-    typedef unsigned char uint8_t;
-    #endif
-    #ifndef UINT16_T
-    #define UINT16_T
-    typedef unsigned short uint16_t;
-    #endif
-#endif
+	#include <stdint.h>
+#endif	// compiler check
 
 /* **************************************************** */
 /* *** IR Data Packet Structure Definitions        *** */
