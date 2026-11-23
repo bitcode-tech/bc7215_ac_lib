@@ -31,7 +31,7 @@
 #define USE_UART_INTERRUPT 0
 
 /* If bc7215_process_uart_data() is not called in interrupt but in a different thread 0 = No */
-#define PROCESS_IN_DIFFERENT_THREAD 1
+#define PROCESS_IN_DIFFERENT_THREAD 0
 
 /* ESP-IDF port note:
  * This project receives UART data from a FreeRTOS task inside Bc7215Drv,
@@ -51,7 +51,8 @@
 
 /* If only data packet is needed and BC7215 will always work in simple mode, 1 = Yes
  * change this value to '0' to save system resources (less code and less RAM used)
- */
+ */	
+
 #define ENABLE_FORMAT 1
 
 #endif
